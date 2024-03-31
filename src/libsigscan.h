@@ -288,7 +288,7 @@ static void* libsigscan_do_scan(void* start, void* end, const char* pattern) {
 /*----------------------------------------------------------------------------*/
 /* Public functions */
 
-/* Search for `ida_pattern' in the specified module. */
+/* Search for `ida_pattern' in the specified `module'. */
 static void* sigscan_module(const char* module, const char* ida_pattern) {
     /* Get a linked list of ModuleBounds, containing the start and end addresses
      * of all the regions that match `module'. */
@@ -298,6 +298,7 @@ static void* sigscan_module(const char* module, const char* ida_pattern) {
     libsigscan_print_module_bounds(bounds);
 #endif
 
+    /* Iterate them, and scan each one until we find a match. */
     void* ret = NULL;
     for (LibsigscanModuleBounds* cur = bounds; cur != NULL; cur = cur->next) {
         void* cur_result =
