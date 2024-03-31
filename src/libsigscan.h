@@ -16,7 +16,7 @@
 #include <stdlib.h> /* strtoull() */
 
 /*----------------------------------------------------------------------------*/
-/* Structures */
+/* Private structures */
 
 typedef struct LibsigscanModuleBounds {
     void* start;
@@ -25,7 +25,7 @@ typedef struct LibsigscanModuleBounds {
 } LibsigscanModuleBounds;
 
 /*----------------------------------------------------------------------------*/
-/* Static functions */
+/* Private functions */
 
 /*
  * Parse /proc/self/maps to get the start and end addresses of the specified
@@ -290,7 +290,7 @@ static void* libsigscan_do_scan(void* start_addr, void* end_addr,
 }
 
 /*----------------------------------------------------------------------------*/
-/* Global functions */
+/* Public functions */
 
 /* Search for `ida_pattern' in the specified module. */
 static void* sigscan_module(const char* module, const char* ida_pattern) {
