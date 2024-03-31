@@ -63,7 +63,7 @@ void* match = sigscan_module(MODULE, SIGNATURE);
 ** =sigscan()=
 
 This function scans the whole memory being used by the process (except the
-regions that start with ='['= in =/proc/self/maps=, like heap, stack, etc.).
+regions that start with =[= in =/proc/self/maps=, like heap, stack, etc.).
 
 This function is just a wrapper, and calling it is the same as passing =NULL= as
 the first parameter to =sigscan_module=.
