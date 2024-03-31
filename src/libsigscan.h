@@ -173,16 +173,19 @@ static void libsigscan_free_module_bounds(LibsigscanModuleBounds* bounds) {
     }
 }
 
-#if 0
+#ifdef LIBSIGSCAN_DEBUG
 /* Print a linked list of ModuleBounds structures */
 static void libsigscan_print_module_bounds(LibsigscanModuleBounds* bounds) {
+    printf("[DEBUG] List of module bounds:\n");
+
     if (!bounds) {
         printf("(No module bounds)");
         return;
     }
 
     int i = 0;
-    for (LibsigscanModuleBounds* cur = bounds; cur != NULL; cur = cur->next, i++)
+    for (LibsigscanModuleBounds* cur = bounds; cur != NULL;
+         cur                         = cur->next, i++)
         printf("[%02d] %p - %p\n", i, cur->start, cur->end);
     putchar('\n');
 }
@@ -294,6 +297,10 @@ static void* sigscan_module(const char* module, const char* ida_pattern) {
     /* Get a linked list of ModuleBounds, containing the start and end addresses
      * of all the regions that match `module'. */
     LibsigscanModuleBounds* bounds = libsigscan_get_module_bounds(module);
+
+#ifdef LIBSIGSCAN_DEBUG
+    libsigscan_print_module_bounds(bounds);
+#endif
 
     void* ret = NULL;
     for (LibsigscanModuleBounds* cur = bounds; cur != NULL; cur = cur->next) {
