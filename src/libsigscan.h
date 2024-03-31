@@ -224,12 +224,8 @@ static uint8_t libsigscan_hex_to_byte(const char* hex) {
     return ret & 0xFF;
 }
 
-/* Search for `pattern' from `start_addr' to `end_addr'. */
-static void* libsigscan_do_scan(void* start_addr, void* end_addr,
-                                const char* pattern) {
-    uint8_t* start = (uint8_t*)start_addr;
-    uint8_t* end   = (uint8_t*)end_addr;
-
+/* Search for `pattern' from `start' to `end'. */
+static void* libsigscan_do_scan(void* start, void* end, const char* pattern) {
     if (!start || !end)
         return NULL;
 
@@ -242,7 +238,7 @@ static void* libsigscan_do_scan(void* start_addr, void* end_addr,
     const char* pat_ptr = pattern;
 
     /* Iterate until we reach the end of the memory or the end of the pattern */
-    while (mem_ptr < end && *pat_ptr != '\0') {
+    while ((void*)mem_ptr < end && *pat_ptr != '\0') {
         /* Wildcard, always match */
         if (*pat_ptr == '?') {
             mem_ptr++;
