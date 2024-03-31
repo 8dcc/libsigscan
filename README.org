@@ -31,4 +31,40 @@ $ make
 
 * Usage
 
-TODO
+The library consists of just 2 functions: =sigscan_module()= and =sigscan()=, which
+is just a wrapper.
+
+For a full example, see [[https://github.com/8dcc/libsigscan/blob/main/src/main.c][src/main.c]].
+
+** =sigscan_module=
+
+This function scans all the memory blocks whose name matches the =module=
+parameter. The function matches the last column in =/proc/self/maps= *literally*, so
+use absolute paths.
+
+#+begin_src C
+#include "libsigscan.h"
+
+#define MODULE    "/usr/lib/libc.so.6"
+#define SIGNATURE "DE AD BE EF ? ? CA FE"
+
+/* Search only in this module. */
+void* match = sigscan_module(MODULE, SIGNATURE);
+#+end_src
+
+** =sigscan=
+
+This function scans the whole memory being used by the process (except the
+regions that start with ='['= in =/proc/self/maps=, like heap, stack, etc.).
+
+Calling this function is the same as passing =NULL= as the first parameter of
+=sigscan_module=.
+
+#+begin_src C
+#include "libsigscan.h"
+
+#define SIGNATURE "DE AD BE EF ? ? CA FE"
+
+/* Look for those bytes in all loaded modules. */
+void* match = sigscan(SIGNATURE);
+#+end_src
