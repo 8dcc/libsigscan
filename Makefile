@@ -3,7 +3,7 @@ CC=gcc
 CFLAGS=-Wall -Wextra
 LDFLAGS=
 
-OBJ_FILES=main.c.o libsigscan.c.o
+OBJ_FILES=main.c.o
 OBJS=$(addprefix obj/, $(OBJ_FILES))
 
 BIN=libsigscan-test.out
