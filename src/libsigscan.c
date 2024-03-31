@@ -171,7 +171,7 @@ static void free_module_bounds(ModuleBounds* bounds) {
     }
 }
 
-#if 1
+#if 0
 /* Print a linked list of ModuleBounds structures */
 static void print_module_bounds(ModuleBounds* bounds) {
     if (!bounds) {
@@ -290,8 +290,6 @@ void* sigscan_module(const char* module, const char* ida_pattern) {
     /* Get a linked list of ModuleBounds, containing the start and end addresses
      * of all the regions that match `module'. */
     ModuleBounds* bounds = get_module_bounds(module);
-
-    print_module_bounds(bounds);
 
     void* ret = NULL;
     for (ModuleBounds* cur = bounds; cur != NULL; cur = cur->next) {
