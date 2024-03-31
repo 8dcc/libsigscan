@@ -13,7 +13,6 @@
 #include <stdbool.h>
 #include <stdio.h>  /* fopen(), FILE* */
 #include <stdlib.h> /* strtoull() */
-#include <ctype.h>  /* isspace() */
 
 /*----------------------------------------------------------------------------*/
 /* Structures */
@@ -35,10 +34,7 @@ typedef struct ModuleBounds {
  *   0000DEADBEEF-0000ABADCAFE rwxp 000123AB 100:00 12345678   /path/module
  *
  * The format has to match this regex:
- *   [^\s]+-[^\s]+ [^\s]{4} [^\s]+ [^\s]+ [^\s]+\s+[^\s]+\n
- *
- * NOTE: You can replace most calls to isspace() and remove the <ctype.h>
- * include by just checking if `c' is a space.
+ *   [^\s]+-[^\s]+ [^\s]{4} [^\s]+ [^\s]+ [^\s]+\s+[^\s]*\n
  */
 static ModuleBounds* get_module_bounds(const char* module_name) {
     FILE* fd = fopen("/proc/self/maps", "r");
@@ -76,24 +72,24 @@ static ModuleBounds* get_module_bounds(const char* module_name) {
         bool is_readable = ((c = fgetc(fd)) == 'r');
 
         /* Skip permissions and single space */
-        while (!isspace(c = fgetc(fd)))
+        while ((c = fgetc(fd)) != ' ')
             ;
 
         /* Skip 3rd column and single space */
-        while (!isspace(c = fgetc(fd)))
+        while ((c = fgetc(fd)) != ' ')
             ;
 
         /* Skip 4th column and single space */
-        while (!isspace(c = fgetc(fd)))
+        while ((c = fgetc(fd)) != ' ')
             ;
 
         /* Skip 5th column */
-        while (!isspace(c = fgetc(fd)))
+        while ((c = fgetc(fd)) != ' ')
             ;
 
         /* Skip spacing until the module name. First char of module name
          * will be saved in `c' after this loop. */
-        while (isspace(c = fgetc(fd)))
+        while ((c = fgetc(fd)) == ' ')
             ;
 
         bool name_matches = true;
@@ -109,7 +105,7 @@ static ModuleBounds* get_module_bounds(const char* module_name) {
             /* Compare module name. Note that the output of maps has absolute
              * paths. */
             int i = 0;
-            while (c != '\n' && c != EOF) {
+            do {
                 /* A character did not match the module name, ignore this line.
                  * We can't break out of the `for' because we have to get to the
                  * newline anyway. */
@@ -120,8 +116,11 @@ static ModuleBounds* get_module_bounds(const char* module_name) {
                     i++;
                 }
 
-                c = fgetc(fd);
-            }
+                /* This check is needed so we don't skip over the '\n' on lines
+                 * with no module name. */
+                if (c != '\n')
+                    c = fgetc(fd);
+            } while (c != '\n' && c != EOF);
         }
 
         /* We can read it, and it's the module we are looking for. */
@@ -183,6 +182,7 @@ static void print_module_bounds(ModuleBounds* bounds) {
     int i = 0;
     for (ModuleBounds* cur = bounds; cur != NULL; cur = cur->next, i++)
         printf("[%02d] %p - %p\n", i, cur->start, cur->end);
+    putchar('\n');
 }
 #endif
 
