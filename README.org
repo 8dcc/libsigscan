@@ -3,40 +3,48 @@
 #+startup: showeverything
 #+author: 8dcc
 
-*C library for signature scanning on Linux.*
+*Single-header C library for signature scanning on Linux.*
 
 #+TOC: headlines 2
 
 * Description
 
-This library is for signature scanning. For more information on how it works,
-check out my [[https://8dcc.github.io/programming/signature-scanning.html][Signature scanning in C]] blog entry.
+This library is for matching byte patterns (signatures) in the memory of a
+process. This library scans the current process, but it should be easy to modify
+for reading external processes by using =/proc/PID/maps=.
 
 It only supports linux, since it parses the =/proc/self/maps= file to get the
 start and end addresses of the loaded modules.
 
+The library asumes all signatures are in [[https://hex-rays.com/ida-pro/][IDA]] format (=DE AD ? EF=). See also the
+[[https://github.com/ajkhoury/SigMaker-x64][sigmaker]] plugin.
+
+For more information on signature scanning and on how this library works, check
+out my [[https://8dcc.github.io/programming/signature-scanning.html][Signature scanning in C]] blog entry.
+
 * Building the example
 
-If you want to use this library, simply copy the detour source and headers to
-your project, include the header in your source files and compile the detour
-source with the rest of your code. Please see [[https://github.com/8dcc/libsigscan/blob/main/src/main.c][src/main.c]] and the /Usage/ section
-for an example on how to use it.
+To try the example, simply clone the repository, compile it, and run
+=libsigscan-test.out=. Please see [[https://github.com/8dcc/libsigscan/blob/main/src/main.c][src/main.c]] and the /Usage/ section for an example
+on how to use it.
 
 #+begin_src console
 $ git clone https://github.com/8dcc/libsigscan
 $ cd libsigscan
 $ make
-...
+$ ./libsigscan-test.out
 #+end_src
 
 * Usage
 
-The library consists of just 2 functions: =sigscan_module()= and =sigscan()=, which
-is just a wrapper.
+Since this is a simple single-header library, you just need to copy the
+=libsigscan.h= file and =#include= it on your sources.
 
 For a full example, see [[https://github.com/8dcc/libsigscan/blob/main/src/main.c][src/main.c]].
 
-** =sigscan_module=
+The library consists of just 2 functions: =sigscan_module()= and =sigscan()=.
+
+** =sigscan_module()=
 
 This function scans all the memory blocks whose name matches the =module=
 parameter. The function matches the last column in =/proc/self/maps= *literally*, so
@@ -52,13 +60,13 @@ use absolute paths.
 void* match = sigscan_module(MODULE, SIGNATURE);
 #+end_src
 
-** =sigscan=
+** =sigscan()=
 
 This function scans the whole memory being used by the process (except the
 regions that start with ='['= in =/proc/self/maps=, like heap, stack, etc.).
 
-Calling this function is the same as passing =NULL= as the first parameter of
-=sigscan_module=.
+This function is just a wrapper, and calling it is the same as passing =NULL= as
+the first parameter to =sigscan_module=.
 
 #+begin_src C
 #include "libsigscan.h"
