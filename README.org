@@ -1,33 +1,34 @@
-#+title: Title
+#+title: libsigscan
 #+options: toc:nil
 #+startup: showeverything
 #+author: 8dcc
 
-#+begin_comment
-*TODO*: Change project-name and title
-*TODO*: Change output.out in Makefile
-#+end_comment
-
-*Short description.*
+*C library for signature scanning on Linux.*
 
 #+TOC: headlines 2
 
 * Description
 
-Long description.
+This library is for signature scanning. For more information on how it works,
+check out my [[https://8dcc.github.io/programming/signature-scanning.html][Signature scanning in C]] blog entry.
 
-* Building
+It only supports linux, since it parses the =/proc/self/maps= file to get the
+start and end addresses of the loaded modules.
+
+* Building the example
+
+If you want to use this library, simply copy the detour source and headers to
+your project, include the header in your source files and compile the detour
+source with the rest of your code. Please see [[https://github.com/8dcc/libsigscan/blob/main/src/main.c][src/main.c]] and the /Usage/ section
+for an example on how to use it.
 
 #+begin_src console
-$ git clone https://github.com/8dcc/project-name
-$ cd project-name
+$ git clone https://github.com/8dcc/libsigscan
+$ cd libsigscan
 $ make
 ...
 #+end_src
 
 * Usage
 
-#+begin_src console
-$ ./project-name.out --help
-...
-#+end_src
+TODO
