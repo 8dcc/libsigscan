@@ -1,12 +1,19 @@
+/**
+ * @file   libsigscan.c
+ * @brief  Signature scanning library source
+ * @author 8dcc
+ *
+ * https://github.com/8dcc/libsigscan
+ */
+
+/* NOTE: Remember to change this if you move the header. */
+#include "libsigscan.h"
 
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>  /* fopen(), FILE* */
 #include <stdlib.h> /* strtoull() */
 #include <ctype.h>  /* isspace() */
-
-/* NOTE: Remember to change this if you move the header. */
-#include "libsigscan.h"
 
 /*----------------------------------------------------------------------------*/
 /* Structures */
@@ -33,7 +40,6 @@ typedef struct ModuleBounds {
  * NOTE: You can replace most calls to isspace() and remove the <ctype.h>
  * include by just checking if `c' is a space.
  */
-
 static ModuleBounds* get_module_bounds(const char* module_name) {
     FILE* fd = fopen("/proc/self/maps", "r");
     if (!fd)
@@ -56,7 +62,7 @@ static ModuleBounds* get_module_bounds(const char* module_name) {
         } while ((c = fgetc(fd)) != '-');
         addr_buf[addr_buf_pos] = '\0';
 
-        uint64_t start_addr = strtoull(addr_buf, NULL, 16);
+        void* start_addr = (void*)strtoull(addr_buf, NULL, 16);
 
         /* Read second address of the line */
         addr_buf_pos = 0;
@@ -64,7 +70,7 @@ static ModuleBounds* get_module_bounds(const char* module_name) {
             addr_buf[addr_buf_pos++] = c;
         addr_buf[addr_buf_pos] = '\0';
 
-        uint64_t end_addr = strtoull(addr_buf, NULL, 16);
+        void* end_addr = (void*)strtoull(addr_buf, NULL, 16);
 
         /* Parse "rwxp". For now we only care about read permissions. */
         bool is_readable = ((c = fgetc(fd)) == 'r');
@@ -124,21 +130,30 @@ static ModuleBounds* get_module_bounds(const char* module_name) {
                 /* Allocate the first bounds struct */
                 cur = malloc(sizeof(ModuleBounds));
 
-                /* This will be returned */
+                /* This one will be returned */
                 ret = cur;
+
+                /* Save the addresses from this line of maps */
+                cur->start = start_addr;
+                cur->end   = end_addr;
+            } else if (cur->end == start_addr && cur->end < end_addr) {
+                /* If the end address of the last struct is the start of this
+                 * one, just merge them. */
+                cur->end = end_addr;
             } else {
-                /* Allocate next bounds struct */
+                /* There was a gap between the end of the last block and the
+                 * start of this one, allocate new struct. */
                 cur->next = malloc(sizeof(ModuleBounds));
 
-                /* And use it */
+                /* Set as current */
                 cur = cur->next;
+
+                /* Save the addresses from this line of maps */
+                cur->start = start_addr;
+                cur->end   = end_addr;
             }
 
-            /* Save the addresses from this line of maps */
-            cur->start = (void*)start_addr;
-            cur->end   = (void*)end_addr;
-
-            /* Indicates the end of the linked list */
+            /* Indicate the end of the linked list */
             cur->next = NULL;
         }
     }
@@ -157,7 +172,7 @@ static void free_module_bounds(ModuleBounds* bounds) {
     }
 }
 
-#if 0
+#if 1
 /* Print a linked list of ModuleBounds structures */
 static void print_module_bounds(ModuleBounds* bounds) {
     if (!bounds) {
@@ -275,6 +290,8 @@ void* sigscan_module(const char* module, const char* ida_pattern) {
     /* Get a linked list of ModuleBounds, containing the start and end addresses
      * of all the regions that match `module'. */
     ModuleBounds* bounds = get_module_bounds(module);
+
+    print_module_bounds(bounds);
 
     void* ret = NULL;
     for (ModuleBounds* cur = bounds; cur != NULL; cur = cur->next) {
