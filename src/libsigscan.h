@@ -1,3 +1,10 @@
+/**
+ * @file   libsigscan.h
+ * @brief  Signature scanning library header
+ * @author 8dcc
+ *
+ * https://github.com/8dcc/libsigscan
+ */
 
 #ifndef LIBSIGSCAN_H_
 #define LIBSIGSCAN_H_ 1
