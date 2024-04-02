@@ -38,6 +38,7 @@ int main(void) {
      * NOTE: The signatures have to be in IDA format. See also:
      * https://github.com/ajkhoury/SigMaker-x64 */
     const char* signature = "DE AD BE EF ? ? CA FE";
+    const char* module_regex;
     void* match;
 
     /* Look for those bytes in all loaded modules. */
@@ -53,12 +54,16 @@ int main(void) {
     }
 
     /* Search only in this module. */
-    match = sigscan_module("/usr/lib/libc.so.6", signature);
-    printf("Searching in a different module: %p\n", match);
+    module_regex = "^.*libsigscan-test\\.out$";
+    match        = sigscan_module(module_regex, signature);
+    printf("Searching in all modules matching regex \"%s\": %p\n", module_regex,
+           match);
 
     /* Invalid module, just returns NULL */
-    match = sigscan_module("/usr/lib/INVALID.so", signature);
-    printf("Searching in an invalid module: %p\n", match);
+    module_regex = "^INVALID$";
+    match        = sigscan_module(module_regex, signature);
+    printf("Searching in all modules matching regex \"%s\": %p\n", module_regex,
+           match);
 
     return 0;
 }

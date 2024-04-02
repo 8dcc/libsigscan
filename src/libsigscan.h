@@ -14,6 +14,7 @@
 #include <stdbool.h>
 #include <stdio.h>  /* fopen(), FILE* */
 #include <stdlib.h> /* strtoull() */
+#include <regex.h>  /* regcomp(), regexec(), etc. */
 
 /*----------------------------------------------------------------------------*/
 /* Private structures */
@@ -27,6 +28,23 @@ typedef struct LibsigscanModuleBounds {
 /*----------------------------------------------------------------------------*/
 /* Private functions */
 
+/* Returns true if string `str` mathes regex pattern `pat`. Pattern uses BRE
+ * syntax: https://www.gnu.org/software/sed/manual/html_node/BRE-syntax.html */
+static bool libsigscan_regex(regex_t expr, const char* str) {
+    int code = regexec(&expr, str, 0, NULL, 0);
+    if (code > REG_NOMATCH) {
+        char err[100];
+        regerror(code, &expr, err, sizeof(err));
+        fprintf(stderr, "libsigscan: regex: regexec returned an error: %s\n",
+                err);
+        return false;
+    }
+
+    /* REG_NOERROR: Success
+     * REG_NOMATCH: Pattern did not match */
+    return code == REG_NOERROR;
+}
+
 /*
  * Parse /proc/self/maps to get the start and end addresses of the specified
  * module.
@@ -37,8 +55,18 @@ typedef struct LibsigscanModuleBounds {
  * The format has to match this regex:
  *   [^\s]+-[^\s]+ [^\s]{4} [^\s]+ [^\s]+ [^\s]+\s+[^\s]*\n
  */
-static LibsigscanModuleBounds* libsigscan_get_module_bounds(
-  const char* module_name) {
+static LibsigscanModuleBounds* libsigscan_get_module_bounds(const char* regex) {
+    static regex_t compiled_regex;
+
+    /* Compile regex pattern once here */
+    if (regex != NULL && regcomp(&compiled_regex, regex, REG_EXTENDED) != 0) {
+        fprintf(stderr,
+                "libsigscan: regex: regcomp returned an error code for pattern "
+                "\"%s\"\n",
+                regex);
+        return NULL;
+    }
+
     FILE* fd = fopen("/proc/self/maps", "r");
     if (!fd)
         return NULL;
@@ -103,7 +131,7 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(
             ;
 
         bool name_matches = true;
-        if (module_name == NULL) {
+        if (regex == NULL) {
             /* We don't want to filter the module name, just make sure it
              * doesn't start with '[' and skip to the end of the line. */
             if (c == '[')
@@ -112,25 +140,33 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(
             while (c != '\n' && c != EOF)
                 c = fgetc(fd);
         } else {
-            /* Compare module name. Note that the output of maps has absolute
-             * paths. */
-            int i = 0;
-            do {
-                /* A character did not match the module name, ignore this line.
-                 * We can't break out of the `for' because we have to get to the
-                 * newline anyway. */
-                if (name_matches && module_name[i] != '\0') {
-                    if (c != module_name[i])
-                        name_matches = false;
+            /* Compare module name against provided regex. Note that the output
+             * of maps has absolute paths. */
+            int name_sz    = 100;
+            char* name_buf = (char*)malloc(name_sz);
 
-                    i++;
+            int i;
+            for (i = 0; c != '\n' && c != EOF; i++) {
+                if (i >= name_sz) {
+                    /* Name is bigger than the buffer size, reallocate with more
+                     * space. */
+                    name_sz += 100;
+                    name_buf = (char*)realloc(name_buf, name_sz);
                 }
 
-                /* This check is needed so we don't skip over the '\n' on lines
-                 * with no module name. */
-                if (c != '\n')
-                    c = fgetc(fd);
-            } while (c != '\n' && c != EOF);
+                /* Save current character in the buffer we allocated */
+                name_buf[i] = c;
+
+                /* Get the next character from the maps file */
+                c = fgetc(fd);
+            }
+
+            /* We just encountered a newline or EOF, finish the string and check
+             * the regex. */
+            name_buf[i] = 0;
+
+            if (!libsigscan_regex(compiled_regex, name_buf))
+                name_matches = false;
         }
 
         /* We can read it, and it's the module we are looking for. */
@@ -168,6 +204,10 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(
             cur->next = NULL;
         }
     }
+
+    /* If we compiled a regex expression, free it before returning */
+    if (regex != NULL)
+        regfree(&compiled_regex);
 
     fclose(fd);
     return ret;
@@ -302,11 +342,11 @@ static void* libsigscan_do_scan(void* start, void* end, const char* pattern) {
 /*----------------------------------------------------------------------------*/
 /* Public functions */
 
-/* Search for `ida_pattern' in the specified `module'. */
-static void* sigscan_module(const char* module, const char* ida_pattern) {
+/* Search for `ida_pattern' in modules matching `regex'. */
+static void* sigscan_module(const char* regex, const char* ida_pattern) {
     /* Get a linked list of ModuleBounds, containing the start and end addresses
-     * of all the regions that match `module'. */
-    LibsigscanModuleBounds* bounds = libsigscan_get_module_bounds(module);
+     * of all the regions whose name matches `regex'. */
+    LibsigscanModuleBounds* bounds = libsigscan_get_module_bounds(regex);
 
 #ifdef LIBSIGSCAN_DEBUG
     libsigscan_print_module_bounds(bounds);
