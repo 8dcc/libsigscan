@@ -137,7 +137,8 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(
         if (is_readable && name_matches) {
             if (cur == NULL) {
                 /* Allocate the first bounds struct */
-                cur = malloc(sizeof(LibsigscanModuleBounds));
+                cur = (LibsigscanModuleBounds*)malloc(
+                  sizeof(LibsigscanModuleBounds));
 
                 /* This one will be returned */
                 ret = cur;
@@ -152,7 +153,8 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(
             } else {
                 /* There was a gap between the end of the last block and the
                  * start of this one, allocate new struct. */
-                cur->next = malloc(sizeof(LibsigscanModuleBounds));
+                cur->next = (LibsigscanModuleBounds*)malloc(
+                  sizeof(LibsigscanModuleBounds));
 
                 /* Set as current */
                 cur = cur->next;
@@ -241,8 +243,12 @@ static void* libsigscan_do_scan(void* start, void* end, const char* pattern) {
     while (*pattern == ' ')
         pattern++;
 
+    /* NOTE: This retarded void* -> char* cast is needed so g++ doesn't generate
+     * a warning. */
+    uint8_t* start_ptr = (uint8_t*)start;
+
     /* Current position in memory and current position in pattern */
-    uint8_t* mem_ptr    = start;
+    uint8_t* mem_ptr    = start_ptr;
     const char* pat_ptr = pattern;
 
     /* Iterate until we reach the end of the memory or the end of the pattern */
@@ -279,8 +285,8 @@ static void* libsigscan_do_scan(void* start, void* end, const char* pattern) {
         } else {
             /* Byte didn't match, check pattern from the begining on the next
              * position in memory */
-            start++;
-            mem_ptr = start;
+            start_ptr++;
+            mem_ptr = start_ptr;
             pat_ptr = pattern;
         }
 
@@ -290,7 +296,7 @@ static void* libsigscan_do_scan(void* start, void* end, const char* pattern) {
     }
 
     /* If we reached end of pattern, return the match. Otherwise, NULL */
-    return (*pat_ptr == '\0') ? start : NULL;
+    return (*pat_ptr == '\0') ? start_ptr : NULL;
 }
 
 /*----------------------------------------------------------------------------*/
