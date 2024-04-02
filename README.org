@@ -46,24 +46,26 @@ The library consists of just 2 functions: =sigscan_module()= and =sigscan()=.
 
 ** =sigscan_module()=
 
-This function scans all the memory blocks whose name matches the =module=
-parameter. The function matches the last column in =/proc/self/maps= *literally*, so
-use absolute paths.
+This function scans all the memory blocks whose name matches the =regex=
+parameter. It uses the [[https://www.gnu.org/software/sed/manual/html_node/ERE-syntax.html][Extended Regular Expression]] (ERE) syntax, so keep that in
+mind before escaping certain characters like =+=, =?=, etc. See also [[https://www.gnu.org/software/sed/manual/html_node/BRE-vs-ERE.html][BRE vs. ERE]].
 
 #+begin_src C
 #include "libsigscan.h"
 
-#define MODULE    "/usr/lib/libc.so.6"
-#define SIGNATURE "DE AD BE EF ? ? CA FE"
+#define MODULE_REGEX ".+/libc.so.6"
+#define SIGNATURE    "DE AD BE EF ? ? CA FE"
 
 /* Search only in this module. */
-void* match = sigscan_module(MODULE, SIGNATURE);
+void* match = sigscan_module(MODULE_REGEX, SIGNATURE);
 #+end_src
 
 ** =sigscan()=
 
 This function scans the whole memory being used by the process (except the
-regions that start with =[= in =/proc/self/maps=, like heap, stack, etc.).
+regions that start with =[= in =/proc/self/maps=, like heap, stack, etc.). Keep in
+mind that depending on the memory being used by the process, it might take a few
+seconds, so it's better to filter the module name whenever possible.
 
 This function is just a wrapper, and calling it is the same as passing =NULL= as
 the first parameter to =sigscan_module=.
