@@ -60,7 +60,11 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(
         } while ((c = fgetc(fd)) != '-');
         addr_buf[addr_buf_pos] = '\0';
 
+#ifdef __i386__
+        void* start_addr = (void*)strtoul(addr_buf, NULL, 16);
+#else
         void* start_addr = (void*)strtoull(addr_buf, NULL, 16);
+#endif
 
         /* Read second address of the line */
         addr_buf_pos = 0;
@@ -68,7 +72,11 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(
             addr_buf[addr_buf_pos++] = c;
         addr_buf[addr_buf_pos] = '\0';
 
-        void* end_addr = (void*)strtoull(addr_buf, NULL, 16);
+#ifdef __i386__
+        void* end_addr = (void*)strtoul(addr_buf, NULL, 16);
+#else
+        void* end_addr   = (void*)strtoull(addr_buf, NULL, 16);
+#endif
 
         /* Parse "rwxp". For now we only care about read permissions. */
         bool is_readable = ((c = fgetc(fd)) == 'r');
