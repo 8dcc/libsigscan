@@ -47,7 +47,7 @@ int main(void) {
 
     if (match != NULL) {
         unsigned char* as_bytes = (unsigned char*)match;
-        printf("First %ld bytes: ", sizeof(secret));
+        printf("First %ld bytes: ", (long)sizeof(secret));
         for (size_t i = 0; i < sizeof(secret); i++)
             printf("0x%02X ", as_bytes[i]);
         putchar('\n');
