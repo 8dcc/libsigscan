@@ -71,101 +71,41 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(const char* regex) {
     if (!fd)
         return NULL;
 
-    /* For converting to uint64_t using strtoull() */
-    static char addr_buf[] = "FFFFFFFFFFFFFFFF";
-    int addr_buf_pos;
-
     /* For the first module. Start `ret' as NULL in case no module is valid. */
     LibsigscanModuleBounds* ret = NULL;
     LibsigscanModuleBounds* cur = ret;
 
-    int c;
-    while ((c = fgetc(fd)) != EOF) {
-        /* Read first address of the line */
-        addr_buf_pos = 0;
-        do {
-            addr_buf[addr_buf_pos++] = c;
-        } while ((c = fgetc(fd)) != '-');
-        addr_buf[addr_buf_pos] = '\0';
+    /* Buffers used in the loop by fgets() and sscanf() */
+    static char line_buf[300];
+    static char rwxp[5];
+    static char offset[17];
+    static char dev[10];
+    static char inode[10];
+    static char pathname[200];
 
-#ifdef __i386__
-        void* start_addr = (void*)strtoul(addr_buf, NULL, 16);
-#else
-        void* start_addr = (void*)strtoull(addr_buf, NULL, 16);
-#endif
+    while (fgets(line_buf, sizeof(line_buf), fd)) {
+        /* Scan the current line using sscanf(). We need to change address sizes
+         * depending on the arch. */
+        long unsigned start_num, end_num;
+        sscanf(line_buf, "%lx-%lx %s %s %s %s %s", &start_num, &end_num, rwxp,
+               offset, dev, inode, pathname);
 
-        /* Read second address of the line */
-        addr_buf_pos = 0;
-        while ((c = fgetc(fd)) != ' ')
-            addr_buf[addr_buf_pos++] = c;
-        addr_buf[addr_buf_pos] = '\0';
-
-#ifdef __i386__
-        void* end_addr = (void*)strtoul(addr_buf, NULL, 16);
-#else
-        void* end_addr   = (void*)strtoull(addr_buf, NULL, 16);
-#endif
+        void* start_addr = (void*)start_num;
+        void* end_addr   = (void*)end_num;
 
         /* Parse "rwxp". For now we only care about read permissions. */
-        bool is_readable = ((c = fgetc(fd)) == 'r');
-
-        /* Skip permissions and single space */
-        while ((c = fgetc(fd)) != ' ')
-            ;
-
-        /* Skip 3rd column and single space */
-        while ((c = fgetc(fd)) != ' ')
-            ;
-
-        /* Skip 4th column and single space */
-        while ((c = fgetc(fd)) != ' ')
-            ;
-
-        /* Skip 5th column */
-        while ((c = fgetc(fd)) != ' ')
-            ;
-
-        /* Skip spacing until the module name. First char of module name
-         * will be saved in `c' after this loop. */
-        while ((c = fgetc(fd)) == ' ')
-            ;
+        bool is_readable = rwxp[0] == 'r';
 
         bool name_matches = true;
         if (regex == NULL) {
             /* We don't want to filter the module name, just make sure it
              * doesn't start with '[' and skip to the end of the line. */
-            if (c == '[')
+            if (pathname[0] == '[')
                 name_matches = false;
-
-            while (c != '\n' && c != EOF)
-                c = fgetc(fd);
         } else {
             /* Compare module name against provided regex. Note that the output
              * of maps has absolute paths. */
-            int name_sz    = 100;
-            char* name_buf = (char*)malloc(name_sz);
-
-            int i;
-            for (i = 0; c != '\n' && c != EOF; i++) {
-                if (i >= name_sz) {
-                    /* Name is bigger than the buffer size, reallocate with more
-                     * space. */
-                    name_sz += 100;
-                    name_buf = (char*)realloc(name_buf, name_sz);
-                }
-
-                /* Save current character in the buffer we allocated */
-                name_buf[i] = c;
-
-                /* Get the next character from the maps file */
-                c = fgetc(fd);
-            }
-
-            /* We just encountered a newline or EOF, finish the string and check
-             * the regex. */
-            name_buf[i] = 0;
-
-            if (!libsigscan_regex(compiled_regex, name_buf))
+            if (!libsigscan_regex(compiled_regex, pathname))
                 name_matches = false;
         }
 
