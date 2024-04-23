@@ -282,11 +282,6 @@ static void* libsigscan_do_scan(void* start, void* end, const char* pattern) {
 /*----------------------------------------------------------------------------*/
 /* Public functions */
 
-/*
- * TODO: Add functions for scanning in other processes. Convert PID to string
- * and pass to `libsigscan_get_module_bounds'. Pass "self" otherwise.
- */
-
 /* Search for `ida_pattern' in modules matching `regex'. */
 static void* sigscan_module(const char* regex, const char* ida_pattern) {
     /* Get a linked list of ModuleBounds, containing the start and end addresses
