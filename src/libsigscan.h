@@ -17,6 +17,20 @@
 #include <regex.h>  /* regcomp(), regexec(), etc. */
 
 /*----------------------------------------------------------------------------*/
+/* Private macros */
+
+#ifdef LIBSIGSCAN_DEBUG
+#define LIBSIGSCAN_ERR(...)              \
+    do {                                 \
+        fprintf(stderr, "libsigscan: "); \
+        fprintf(stderr, __VA_ARGS__);    \
+        fputc('\n', stderr);             \
+    } while (0)
+#else
+#define LIBSIGSCAN_ERR(...)
+#endif
+
+/*----------------------------------------------------------------------------*/
 /* Private structures */
 
 typedef struct LibsigscanModuleBounds {
@@ -35,8 +49,7 @@ static bool libsigscan_regex(regex_t expr, const char* str) {
     if (code > REG_NOMATCH) {
         char err[100];
         regerror(code, &expr, err, sizeof(err));
-        fprintf(stderr, "libsigscan: regex: regexec returned an error: %s\n",
-                err);
+        LIBSIGSCAN_ERR("regexec() returned an error: %s\n", err);
         return false;
     }
 
@@ -60,16 +73,16 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(const char* regex) {
 
     /* Compile regex pattern once here */
     if (regex != NULL && regcomp(&compiled_regex, regex, REG_EXTENDED) != 0) {
-        fprintf(stderr,
-                "libsigscan: regex: regcomp returned an error code for pattern "
-                "\"%s\"\n",
-                regex);
+        LIBSIGSCAN_ERR("regcomp() returned an error code for pattern \"%s\"\n",
+                       regex);
         return NULL;
     }
 
     FILE* fd = fopen("/proc/self/maps", "r");
-    if (!fd)
+    if (!fd) {
+        LIBSIGSCAN_ERR("Couldn't open /proc/self/maps");
         return NULL;
+    }
 
     /* For the first module. Start `ret' as NULL in case no module is valid. */
     LibsigscanModuleBounds* ret = NULL;
