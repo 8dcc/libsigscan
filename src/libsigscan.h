@@ -19,6 +19,20 @@
 #include <regex.h>  /* regcomp(), regexec(), etc. */
 
 /*----------------------------------------------------------------------------*/
+/* Private macros */
+
+#ifdef LIBSIGSCAN_DEBUG
+#define LIBSIGSCAN_ERR(...)              \
+    do {                                 \
+        fprintf(stderr, "libsigscan: "); \
+        fprintf(stderr, __VA_ARGS__);    \
+        fputc('\n', stderr);             \
+    } while (0)
+#else
+#define LIBSIGSCAN_ERR(...)
+#endif
+
+/*----------------------------------------------------------------------------*/
 /* Private structures */
 
 typedef enum LibsigscanEPidTypes {
@@ -35,15 +49,14 @@ typedef struct LibsigscanModuleBounds {
 /*----------------------------------------------------------------------------*/
 /* Private functions */
 
-/* Returns true if string `str` mathes regex pattern `pat`. Pattern uses BRE
+/* Returns true if string `str' mathes regex pattern `pat'. Pattern uses BRE
  * syntax: https://www.gnu.org/software/sed/manual/html_node/BRE-syntax.html */
 static bool libsigscan_regex(regex_t expr, const char* str) {
     int code = regexec(&expr, str, 0, NULL, 0);
     if (code > REG_NOMATCH) {
         char err[100];
         regerror(code, &expr, err, sizeof(err));
-        fprintf(stderr, "libsigscan: regex: regexec returned an error: %s\n",
-                err);
+        LIBSIGSCAN_ERR("regexec() returned an error: %s\n", err);
         return false;
     }
 
@@ -59,8 +72,8 @@ static bool libsigscan_regex(regex_t expr, const char* str) {
  * The function assumes the format of maps is always:
  *   0000DEADBEEF-0000ABADCAFE rwxp 000123AB 100:00 12345678   /path/module
  *
- * The format has to match this regex:
- *   [^\s]+-[^\s]+ [^\s]{4} [^\s]+ [^\s]+ [^\s]+\s+[^\s]*\n
+ * Each line is expected to match the following scanf() format:
+ *   "%lx-%lx %s %s %s %s %s"
  */
 static LibsigscanModuleBounds* libsigscan_get_module_bounds(int pid,
                                                             const char* regex) {
@@ -68,10 +81,8 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(int pid,
 
     /* Compile regex pattern once here */
     if (regex != NULL && regcomp(&compiled_regex, regex, REG_EXTENDED) != 0) {
-        fprintf(stderr,
-                "libsigscan: regex: regcomp returned an error code for pattern "
-                "\"%s\"\n",
-                regex);
+        LIBSIGSCAN_ERR("regcomp() returned an error code for pattern \"%s\"\n",
+                       regex);
         return NULL;
     }
 
@@ -82,8 +93,10 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(int pid,
 
     /* Open the maps file */
     FILE* fd = fopen(maps_path, "r");
-    if (!fd)
+    if (!fd) {
+        LIBSIGSCAN_ERR("Couldn't open /proc/self/maps");
         return NULL;
+    }
 
     /* For the first module. Start `ret' as NULL in case no module is valid. */
     LibsigscanModuleBounds* ret = NULL;
@@ -177,27 +190,9 @@ static void libsigscan_free_module_bounds(LibsigscanModuleBounds* bounds) {
     }
 }
 
-#ifdef LIBSIGSCAN_DEBUG
-/* Print a linked list of ModuleBounds structures */
-static void libsigscan_print_module_bounds(LibsigscanModuleBounds* bounds) {
-    printf("[DEBUG] List of module bounds:\n");
-
-    if (!bounds) {
-        printf("(No module bounds)");
-        return;
-    }
-
-    int i = 0;
-    for (LibsigscanModuleBounds* cur = bounds; cur != NULL;
-         cur                         = cur->next, i++)
-        printf("[%02d] %p - %p\n", i, cur->start, cur->end);
-    putchar('\n');
-}
-#endif
-
 /* Used for getting the bytes from IDA patterns.
  * Converts: "E0" -> 224 */
-static uint8_t libsigscan_hex_to_byte(const char* hex) {
+static uint8_t libsigscan_hex2byte(const char* hex) {
     int ret = 0;
 
     /* Skip leading spaces, if any */
@@ -228,15 +223,73 @@ static uint8_t libsigscan_hex_to_byte(const char* hex) {
     return ret & 0xFF;
 }
 
-/* Search for `pattern' from `start' to `end' inside the memory of `pid'. */
+/*
+ * Convert `ida' signature to code + mask format. Allocate `code_ptr' and
+ * `mask_ptr'.
+ *
+ * IDA format:  "FF ? ? 89"
+ * Code format: "\xFF\x00\x00\x89"
+ * Mask format: "x??x"
+ */
+static void libsigscan_ida2code(const char* ida, uint8_t** code_ptr,
+                                char** mask_ptr) {
+    int arr_sz    = 100;
+    uint8_t* code = *code_ptr = (uint8_t*)malloc(arr_sz);
+    char* mask = *mask_ptr = (char*)malloc(arr_sz);
+
+    /* Skip preceding spaces from pattern, if any */
+    while (*ida == ' ')
+        ida++;
+
+    int i;
+    for (i = 0; *ida != '\0'; i++) {
+        /* If the output arrays are full, reallocate. The `arr_sz' variable is
+         * used for both `code' and `mask' arrays. */
+        if (i >= arr_sz) {
+            arr_sz += 100;
+            code = *code_ptr = (uint8_t*)realloc(code, arr_sz);
+            mask = *mask_ptr = (char*)realloc(mask, arr_sz);
+        }
+
+        if (*ida == '?') {
+            code[i] = 0x00;
+            mask[i] = '?';
+
+            /* "A1 ?? ?? B2" -> "A1 ? ? B2" */
+            while (*ida == '?')
+                ida++;
+        } else {
+            /* Convert "E0" into 224 */
+            code[i] = libsigscan_hex2byte(ida);
+            mask[i] = 'x';
+
+            /* Go to next byte separator in pattern (space) */
+            while (*ida != ' ' && *ida != '\0')
+                ida++;
+        }
+
+        /* Skip trailing spaces */
+        while (*ida == ' ')
+            ida++;
+    }
+
+    if (i >= arr_sz)
+        mask = *mask_ptr = (char*)realloc(mask, arr_sz + 1);
+
+    /* Indicate the end of the pattern in the mask, since 0x00 is valid in
+     * code[] */
+    mask[i] = '\0';
+}
+
+/* Search for pattern `ida' from `start' to `end' inside the memory of `pid' */
 static void* libsigscan_pid_scan(int pid, void* start, void* end,
-                                 const char* pattern) {
+                                 const char* ida) {
     if (!start || !end)
         return NULL;
 
-    /* Skip preceding spaces from pattern, if any */
-    while (*pattern == ' ')
-        pattern++;
+    uint8_t* pattern;
+    char* mask;
+    libsigscan_ida2code(ida, &pattern, &mask);
 
     /* TODO: Read from /proc/pid/mem */
     (void)pid;
@@ -258,60 +311,39 @@ static void* libsigscan_pid_scan(int pid, void* start, void* end,
     }
 #endif
 
-    /* NOTE: This retarded void* -> char* cast is needed so g++ doesn't generate
-     * a warning. */
+    /* Current position in memory */
     uint8_t* start_ptr = (uint8_t*)start;
+    uint8_t* mem_ptr   = start_ptr;
 
-    /* Current position in memory and current position in pattern */
-    uint8_t* mem_ptr    = start_ptr;
-    const char* pat_ptr = pattern;
+    int pat_pos  = 0;
+    int mask_pos = 0;
 
     /* Iterate until we reach the end of the memory or the end of the pattern */
-    while ((void*)mem_ptr < end && *pat_ptr != '\0') {
-        /* Wildcard, always match */
-        if (*pat_ptr == '?') {
+    while ((void*)mem_ptr < end && mask[mask_pos] != '\0') {
+        if (mask[mask_pos] == '?' || *mem_ptr == pattern[pat_pos]) {
+            /* Either there was a wildcard on the mask, or we found exact byte
+             * match with the pattern. Go to next byte in memory. */
             mem_ptr++;
-
-            /* "A1 ?? ?? B2" -> "A1 ? ? B2" */
-            while (*pat_ptr == '?')
-                pat_ptr++;
-
-            /* Remove trailing spaces after '?'
-             * NOTE: I reused this code, but you could use `goto` */
-            while (*pat_ptr == ' ')
-                pat_ptr++;
-
-            continue;
-        }
-
-        /* Convert "E0" into 224.
-         * TODO: Would be better to only do this once at the start of the
-         * function with some kind of ida2bytes function (We would need a mask
-         * for the '?' vs. 0x3F). */
-        uint8_t cur_byte = libsigscan_hex_to_byte(pat_ptr);
-
-        if (*mem_ptr == cur_byte) {
-            /* Found exact byte match in sequence, go to next byte in memory */
-            mem_ptr++;
-
-            /* Go to next byte separator in pattern (space) */
-            while (*pat_ptr != ' ' && *pat_ptr != '\0')
-                pat_ptr++;
+            pat_pos++;
+            mask_pos++;
         } else {
             /* Byte didn't match, check pattern from the begining on the next
              * position in memory */
             start_ptr++;
-            mem_ptr = start_ptr;
-            pat_ptr = pattern;
+            mem_ptr  = start_ptr;
+            pat_pos  = 0;
+            mask_pos = 0;
         }
-
-        /* Skip trailing spaces */
-        while (*pat_ptr == ' ')
-            pat_ptr++;
     }
 
-    /* If we reached end of pattern, return the match. Otherwise, NULL */
-    return (*pat_ptr == '\0') ? start_ptr : NULL;
+    /* If we reached end of the mask (i.e. pattern), return the match.
+     * Otherwise, NULL. */
+    void* ret = (mask[mask_pos] == '\0') ? start_ptr : NULL;
+
+    free(pattern);
+    free(mask);
+
+    return ret;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -374,10 +406,6 @@ static void* sigscan_pid_module(int pid, const char* regex,
     /* Get a linked list of ModuleBounds, containing the start and end addresses
      * of all the regions whose name matches `regex'. */
     LibsigscanModuleBounds* bounds = libsigscan_get_module_bounds(pid, regex);
-
-#ifdef LIBSIGSCAN_DEBUG
-    libsigscan_print_module_bounds(bounds);
-#endif
 
     /* Iterate them, and scan each one until we find a match. */
     void* ret = NULL;
