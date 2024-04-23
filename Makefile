@@ -6,23 +6,22 @@ LDFLAGS=
 OBJ_FILES=main.c.o
 OBJS=$(addprefix obj/, $(OBJ_FILES))
 
-BIN=libsigscan-test.out
+BIN1=libsigscan-test.out
+BIN2=libsigscan-test-external.out
 
 #-------------------------------------------------------------------------------
 
 .PHONY: clean all
 
-all: $(BIN)
+all: $(BIN1) $(BIN2)
 
 clean:
-	rm -f $(OBJS)
-	rm -f $(BIN)
+	rm -f $(BIN1) $(BIN2)
 
 #-------------------------------------------------------------------------------
 
-$(BIN): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
+$(BIN1): src/main.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-obj/%.c.o : src/%.c
-	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c -o $@ $<
+$(BIN2): src/external-test.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)

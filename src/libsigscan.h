@@ -241,6 +241,23 @@ static void* libsigscan_pid_scan(int pid, void* start, void* end,
     /* TODO: Read from /proc/pid/mem */
     (void)pid;
 
+#if 0
+    static char mem_path[50] = "/proc/self/mem";
+    if (pid != LIBSIGSCAN_PID_SELF)
+        sprintf(mem_path, "/proc/%d/mem", pid);
+
+    /* TODO: Print errors with macro if LIBSIGSCAN_DEBUG is enabled, or add some
+     * kind of libsigscan errno */
+    int fd = open(mem_path, O_RDONLY);
+    if (fd == -1)
+        return NULL;
+
+    if (lseek64(fd, start, SEEK_SET) == -1) {
+        close(fd);
+        return NULL;
+    }
+#endif
+
     /* NOTE: This retarded void* -> char* cast is needed so g++ doesn't generate
      * a warning. */
     uint8_t* start_ptr = (uint8_t*)start;
