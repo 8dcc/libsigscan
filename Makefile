@@ -1,6 +1,6 @@
 
 CC=gcc
-CFLAGS=-Wall -Wextra
+CFLAGS=-Wall -Wextra -Wpedantic
 LDFLAGS=
 
 BIN=libsigscan-test.out
