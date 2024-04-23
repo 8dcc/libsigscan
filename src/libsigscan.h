@@ -12,11 +12,13 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdio.h>  /* fopen(), FILE* */
-#include <string.h> /* strstr() */
-#include <stdlib.h> /* strtoull() */
-#include <dirent.h> /* readdir() */
-#include <regex.h>  /* regcomp(), regexec(), etc. */
+#include <stdio.h>    /* fopen(), FILE* */
+#include <string.h>   /* strstr() */
+#include <stdlib.h>   /* strtoull() */
+#include <dirent.h>   /* readdir() */
+#include <regex.h>    /* regcomp(), regexec(), etc. */
+#include <sys/mman.h> /* mmap() */
+#include <errno.h>    /* errno */
 
 /*----------------------------------------------------------------------------*/
 /* Private macros */
@@ -284,7 +286,7 @@ static void libsigscan_ida2code(const char* ida, uint8_t** code_ptr,
 }
 
 /* Search for pattern `ida' from `start' to `end' inside the memory of `pid' */
-static void* libsigscan_pid_scan(int pid, void* start, void* end,
+static void* libsigscan_pid_scan(int pid, uintptr_t start, uintptr_t end,
                                  const char* ida) {
     if (!start || !end)
         return NULL;
@@ -293,35 +295,37 @@ static void* libsigscan_pid_scan(int pid, void* start, void* end,
     char* mask;
     libsigscan_ida2code(ida, &pattern, &mask);
 
-    /* TODO: Read from /proc/pid/mem */
-    (void)pid;
-
-#if 0
     static char mem_path[50] = "/proc/self/mem";
     if (pid != LIBSIGSCAN_PID_SELF)
         sprintf(mem_path, "/proc/%d/mem", pid);
 
-    /* TODO: Print errors with macro if LIBSIGSCAN_DEBUG is enabled, or add some
-     * kind of libsigscan errno */
-    int fd = open(mem_path, O_RDONLY);
-    if (fd == -1)
-        return NULL;
-
-    if (lseek64(fd, start, SEEK_SET) == -1) {
-        close(fd);
+    FILE* fp = fopen(mem_path, "r");
+    if (fp == NULL) {
+        LIBSIGSCAN_ERR("Couldn't open %s", mem_path);
         return NULL;
     }
-#endif
+
+    size_t region_size = end - start;
+
+    /* Map the first N bytes of `fp' at offset 0 to the returned pointer */
+    void* mapped_start =
+      mmap(NULL, region_size, PROT_READ, MAP_SHARED, fileno(fp), start);
+
+    /* FIXME: This always fails with errno: ENODEV (19) No such device */
+    if (mapped_start == MAP_FAILED) {
+        LIBSIGSCAN_ERR("mmap() returned MAP_FAILED. Errno: %d\n", errno);
+        return NULL;
+    }
 
     /* Current position in memory */
-    uint8_t* start_ptr = (uint8_t*)start;
+    uint8_t* start_ptr = (uint8_t*)mapped_start;
     uint8_t* mem_ptr   = start_ptr;
 
     int pat_pos  = 0;
     int mask_pos = 0;
 
     /* Iterate until we reach the end of the memory or the end of the pattern */
-    while ((void*)mem_ptr < end && mask[mask_pos] != '\0') {
+    while ((uintptr_t)mem_ptr < end && mask[mask_pos] != '\0') {
         if (mask[mask_pos] == '?' || *mem_ptr == pattern[pat_pos]) {
             /* Either there was a wildcard on the mask, or we found exact byte
              * match with the pattern. Go to next byte in memory. */
@@ -342,6 +346,7 @@ static void* libsigscan_pid_scan(int pid, void* start, void* end,
      * Otherwise, NULL. */
     void* ret = (mask[mask_pos] == '\0') ? start_ptr : NULL;
 
+    fclose(fp);
     free(pattern);
     free(mask);
 
@@ -413,7 +418,8 @@ static void* sigscan_pid_module(int pid, const char* regex,
     void* ret = NULL;
     for (LibsigscanModuleBounds* cur = bounds; cur != NULL; cur = cur->next) {
         void* cur_result =
-          libsigscan_pid_scan(pid, cur->start, cur->end, ida_pattern);
+          libsigscan_pid_scan(pid, (uintptr_t)cur->start, (uintptr_t)cur->end,
+                              ida_pattern);
 
         if (cur_result != NULL) {
             ret = cur_result;
