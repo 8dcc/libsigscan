@@ -62,7 +62,8 @@ static bool libsigscan_regex(regex_t expr, const char* str) {
  * The format has to match this regex:
  *   [^\s]+-[^\s]+ [^\s]{4} [^\s]+ [^\s]+ [^\s]+\s+[^\s]*\n
  */
-static LibsigscanModuleBounds* libsigscan_get_module_bounds(const char* regex) {
+static LibsigscanModuleBounds* libsigscan_get_module_bounds(int pid,
+                                                            const char* regex) {
     static regex_t compiled_regex;
 
     /* Compile regex pattern once here */
@@ -74,7 +75,13 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(const char* regex) {
         return NULL;
     }
 
-    FILE* fd = fopen("/proc/self/maps", "r");
+    /* Get the full path to /proc/PID/maps from the specified PID */
+    static char maps_path[50] = "/proc/self/maps";
+    if (pid != LIBSIGSCAN_PID_SELF)
+        sprintf(maps_path, "/proc/%d/maps", pid);
+
+    /* Open the maps file */
+    FILE* fd = fopen(maps_path, "r");
     if (!fd)
         return NULL;
 
@@ -221,14 +228,18 @@ static uint8_t libsigscan_hex_to_byte(const char* hex) {
     return ret & 0xFF;
 }
 
-/* Search for `pattern' from `start' to `end'. */
-static void* libsigscan_do_scan(void* start, void* end, const char* pattern) {
+/* Search for `pattern' from `start' to `end' inside the memory of `pid'. */
+static void* libsigscan_pid_scan(int pid, void* start, void* end,
+                                 const char* pattern) {
     if (!start || !end)
         return NULL;
 
     /* Skip preceding spaces from pattern, if any */
     while (*pattern == ' ')
         pattern++;
+
+    /* TODO: Read from /proc/pid/mem */
+    (void)pid;
 
     /* NOTE: This retarded void* -> char* cast is needed so g++ doesn't generate
      * a warning. */
@@ -291,7 +302,7 @@ static void* libsigscan_do_scan(void* start, void* end, const char* pattern) {
 
 /* Get the PID of the first process that matches `process_name' */
 int sigscan_pidof(const char* process_name) {
-    static char filename[FILENAME_MAX];
+    static char filename[50];
     static char cmdline[256];
 
     DIR* dir = opendir("/proc");
@@ -332,15 +343,20 @@ int sigscan_pidof(const char* process_name) {
 }
 
 /*
- * TODO: Add functions for scanning in other processes. Convert PID to string
- * and pass to `libsigscan_get_module_bounds'. Pass "self" otherwise.
+ * Search for `ida_pattern' in all the loaded modules of `pid', also matching
+ * `regex'.
+ *
+ * If `pid' is negative, it searches in the currently loaded modules.
+ * If `regex' is NULL, it doesn't filter regex.
  */
+static void* sigscan_pid_module(int pid, const char* regex,
+                                const char* ida_pattern) {
+    if (pid == LIBSIGSCAN_PID_INVALID)
+        return NULL;
 
-/* Search for `ida_pattern' in modules matching `regex'. */
-static void* sigscan_module(const char* regex, const char* ida_pattern) {
     /* Get a linked list of ModuleBounds, containing the start and end addresses
      * of all the regions whose name matches `regex'. */
-    LibsigscanModuleBounds* bounds = libsigscan_get_module_bounds(regex);
+    LibsigscanModuleBounds* bounds = libsigscan_get_module_bounds(pid, regex);
 
 #ifdef LIBSIGSCAN_DEBUG
     libsigscan_print_module_bounds(bounds);
@@ -350,7 +366,7 @@ static void* sigscan_module(const char* regex, const char* ida_pattern) {
     void* ret = NULL;
     for (LibsigscanModuleBounds* cur = bounds; cur != NULL; cur = cur->next) {
         void* cur_result =
-          libsigscan_do_scan(cur->start, cur->end, ida_pattern);
+          libsigscan_pid_scan(pid, cur->start, cur->end, ida_pattern);
 
         if (cur_result != NULL) {
             ret = cur_result;
@@ -364,9 +380,19 @@ static void* sigscan_module(const char* regex, const char* ida_pattern) {
     return ret;
 }
 
+/* Search for `ida_pattern' in all the loaded modules of `pid'. */
+static inline void* sigscan_pid(int pid, const char* ida_pattern) {
+    return sigscan_pid_module(pid, NULL, ida_pattern);
+}
+
+/* Search for `ida_pattern' in all the loaded modules matching `regex'. */
+static inline void* sigscan_module(const char* regex, const char* ida_pattern) {
+    return sigscan_pid_module(LIBSIGSCAN_PID_SELF, regex, ida_pattern);
+}
+
 /* Search for `ida_pattern' in all the loaded modules. */
 static inline void* sigscan(const char* ida_pattern) {
-    return sigscan_module(NULL, ida_pattern);
+    return sigscan_pid_module(LIBSIGSCAN_PID_SELF, NULL, ida_pattern);
 }
 
 #endif /* LIBSIGSCAN_H_ */
