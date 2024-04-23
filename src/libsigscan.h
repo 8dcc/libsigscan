@@ -288,8 +288,10 @@ static void libsigscan_ida2code(const char* ida, uint8_t** code_ptr,
 /* Search for pattern `ida' from `start' to `end' inside the memory of `pid' */
 static void* libsigscan_pid_scan(int pid, uintptr_t start, uintptr_t end,
                                  const char* ida) {
-    if (!start || !end)
+    if (!start || !end) {
+        LIBSIGSCAN_ERR("do_scan() got invalid start or end pointers");
         return NULL;
+    }
 
     uint8_t* pattern;
     char* mask;
