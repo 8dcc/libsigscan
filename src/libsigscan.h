@@ -42,7 +42,7 @@ typedef struct LibsigscanModuleBounds {
 /*----------------------------------------------------------------------------*/
 /* Private functions */
 
-/* Returns true if string `str` mathes regex pattern `pat`. Pattern uses BRE
+/* Returns true if string `str' mathes regex pattern `pat'. Pattern uses BRE
  * syntax: https://www.gnu.org/software/sed/manual/html_node/BRE-syntax.html */
 static bool libsigscan_regex(regex_t expr, const char* str) {
     int code = regexec(&expr, str, 0, NULL, 0);
@@ -65,8 +65,8 @@ static bool libsigscan_regex(regex_t expr, const char* str) {
  * The function assumes the format of maps is always:
  *   0000DEADBEEF-0000ABADCAFE rwxp 000123AB 100:00 12345678   /path/module
  *
- * The format has to match this regex:
- *   [^\s]+-[^\s]+ [^\s]{4} [^\s]+ [^\s]+ [^\s]+\s+[^\s]*\n
+ * Each line is expected to match the following scanf() format:
+ *   "%lx-%lx %s %s %s %s %s"
  */
 static LibsigscanModuleBounds* libsigscan_get_module_bounds(const char* regex) {
     static regex_t compiled_regex;
