@@ -163,24 +163,6 @@ static void libsigscan_free_module_bounds(LibsigscanModuleBounds* bounds) {
     }
 }
 
-#ifdef LIBSIGSCAN_DEBUG
-/* Print a linked list of ModuleBounds structures */
-static void libsigscan_print_module_bounds(LibsigscanModuleBounds* bounds) {
-    printf("[DEBUG] List of module bounds:\n");
-
-    if (!bounds) {
-        printf("(No module bounds)");
-        return;
-    }
-
-    int i = 0;
-    for (LibsigscanModuleBounds* cur = bounds; cur != NULL;
-         cur                         = cur->next, i++)
-        printf("[%02d] %p - %p\n", i, cur->start, cur->end);
-    putchar('\n');
-}
-#endif
-
 /* Used for getting the bytes from IDA patterns.
  * Converts: "E0" -> 224 */
 static uint8_t libsigscan_hex2byte(const char* hex) {
@@ -324,10 +306,6 @@ static void* sigscan_module(const char* regex, const char* ida_pattern) {
     /* Get a linked list of ModuleBounds, containing the start and end addresses
      * of all the regions whose name matches `regex'. */
     LibsigscanModuleBounds* bounds = libsigscan_get_module_bounds(regex);
-
-#ifdef LIBSIGSCAN_DEBUG
-    libsigscan_print_module_bounds(bounds);
-#endif
 
     /* Iterate them, and scan each one until we find a match. */
     void* ret = NULL;
