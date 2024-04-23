@@ -13,11 +13,18 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>  /* fopen(), FILE* */
+#include <string.h> /* strstr() */
 #include <stdlib.h> /* strtoull() */
+#include <dirent.h> /* readdir() */
 #include <regex.h>  /* regcomp(), regexec(), etc. */
 
 /*----------------------------------------------------------------------------*/
 /* Private structures */
+
+typedef enum LibsigscanEPidTypes {
+    LIBSIGSCAN_PID_INVALID = -2, /* Invalid PID, should be ignored */
+    LIBSIGSCAN_PID_SELF    = -1, /* We want to search in our own modules */
+} LibsigscanEPidTypes;
 
 typedef struct LibsigscanModuleBounds {
     void* start;
@@ -281,6 +288,48 @@ static void* libsigscan_do_scan(void* start, void* end, const char* pattern) {
 
 /*----------------------------------------------------------------------------*/
 /* Public functions */
+
+/* Get the PID of the first process that matches `process_name' */
+int sigscan_pidof(const char* process_name) {
+    static char filename[FILENAME_MAX];
+    static char cmdline[256];
+
+    DIR* dir = opendir("/proc");
+    if (dir == NULL)
+        return LIBSIGSCAN_PID_INVALID;
+
+    struct dirent* de;
+    while ((de = readdir(dir)) != NULL) {
+        /* The name of each folder inside /proc/ is a PID */
+        int pid = atoi(de->d_name);
+        if (pid <= 0)
+            continue;
+
+        /* See proc_cmdline(5). You can also try:
+         *   cat /proc/self/maps | xxd   */
+        sprintf(filename, "/proc/%d/cmdline", pid);
+
+        FILE* fd = fopen(filename, "r");
+        if (fd == NULL)
+            continue;
+
+        char* fgets_ret = fgets(cmdline, sizeof(cmdline), fd);
+        fclose(fd);
+
+        if (fgets_ret == NULL)
+            continue;
+
+        /* We found the PID */
+        if (strstr(cmdline, process_name)) {
+            closedir(dir);
+            return pid;
+        }
+    }
+
+    /* We checked all /proc/.../cmdline's and we didn't find the process */
+    closedir(dir);
+    return LIBSIGSCAN_PID_INVALID;
+}
 
 /*
  * TODO: Add functions for scanning in other processes. Convert PID to string
