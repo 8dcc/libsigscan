@@ -183,7 +183,7 @@ static void libsigscan_print_module_bounds(LibsigscanModuleBounds* bounds) {
 
 /* Used for getting the bytes from IDA patterns.
  * Converts: "E0" -> 224 */
-static uint8_t libsigscan_hex_to_byte(const char* hex) {
+static uint8_t libsigscan_hex2byte(const char* hex) {
     int ret = 0;
 
     /* Skip leading spaces, if any */
@@ -214,69 +214,106 @@ static uint8_t libsigscan_hex_to_byte(const char* hex) {
     return ret & 0xFF;
 }
 
-/* Search for `pattern' from `start' to `end'. */
-static void* libsigscan_do_scan(void* start, void* end, const char* pattern) {
+/*
+ * Convert `ida' signature to code + mask format. Allocate `code_ptr' and
+ * `mask_ptr'.
+ *
+ * IDA format:  "FF ? ? 89"
+ * Code format: "\xFF\x00\x00\x89"
+ * Mask format: "x??x"
+ */
+static void libsigscan_ida2code(const char* ida, uint8_t** code_ptr,
+                                char** mask_ptr) {
+    int arr_sz    = 100;
+    uint8_t* code = *code_ptr = malloc(arr_sz);
+    char* mask = *mask_ptr = malloc(arr_sz);
+
+    /* Skip preceding spaces from pattern, if any */
+    while (*ida == ' ')
+        ida++;
+
+    int i;
+    for (i = 0; *ida != '\0'; i++) {
+        /* If the output arrays are full, reallocate. The `arr_sz' variable is
+         * used for both `code' and `mask' arrays. */
+        if (i >= arr_sz) {
+            arr_sz += 100;
+            code = *code_ptr = realloc(code, arr_sz);
+            mask = *mask_ptr = realloc(mask, arr_sz);
+        }
+
+        if (*ida == '?') {
+            code[i] = 0x00;
+            mask[i] = '?';
+
+            /* "A1 ?? ?? B2" -> "A1 ? ? B2" */
+            while (*ida == '?')
+                ida++;
+        } else {
+            /* Convert "E0" into 224 */
+            code[i] = libsigscan_hex2byte(ida);
+            mask[i] = 'x';
+
+            /* Go to next byte separator in pattern (space) */
+            while (*ida != ' ' && *ida != '\0')
+                ida++;
+        }
+
+        /* Skip trailing spaces */
+        while (*ida == ' ')
+            ida++;
+    }
+
+    if (i >= arr_sz)
+        mask = *mask_ptr = realloc(mask, arr_sz + 1);
+
+    /* Indicate the end of the pattern in the mask, since 0x00 is valid in
+     * code[] */
+    mask[i] = '\0';
+}
+
+/* Search for pattern `ida' from `start' to `end'. */
+static void* libsigscan_do_scan(void* start, void* end, const char* ida) {
     if (!start || !end)
         return NULL;
 
-    /* Skip preceding spaces from pattern, if any */
-    while (*pattern == ' ')
-        pattern++;
+    uint8_t* pattern;
+    char* mask;
+    libsigscan_ida2code(ida, &pattern, &mask);
 
-    /* NOTE: This retarded void* -> char* cast is needed so g++ doesn't generate
-     * a warning. */
+    /* Current position in memory */
     uint8_t* start_ptr = (uint8_t*)start;
+    uint8_t* mem_ptr   = start_ptr;
 
-    /* Current position in memory and current position in pattern */
-    uint8_t* mem_ptr    = start_ptr;
-    const char* pat_ptr = pattern;
+    int pat_pos  = 0;
+    int mask_pos = 0;
 
     /* Iterate until we reach the end of the memory or the end of the pattern */
-    while ((void*)mem_ptr < end && *pat_ptr != '\0') {
-        /* Wildcard, always match */
-        if (*pat_ptr == '?') {
+    while ((void*)mem_ptr < end && mask[mask_pos] != '\0') {
+        if (mask[mask_pos] == '?' || *mem_ptr == pattern[pat_pos]) {
+            /* Either there was a wildcard on the mask, or we found exact byte
+             * match with the pattern. Go to next byte in memory. */
             mem_ptr++;
-
-            /* "A1 ?? ?? B2" -> "A1 ? ? B2" */
-            while (*pat_ptr == '?')
-                pat_ptr++;
-
-            /* Remove trailing spaces after '?'
-             * NOTE: I reused this code, but you could use `goto` */
-            while (*pat_ptr == ' ')
-                pat_ptr++;
-
-            continue;
-        }
-
-        /* Convert "E0" into 224.
-         * TODO: Would be better to only do this once at the start of the
-         * function with some kind of ida2bytes function (We would need a mask
-         * for the '?' vs. 0x3F). */
-        uint8_t cur_byte = libsigscan_hex_to_byte(pat_ptr);
-
-        if (*mem_ptr == cur_byte) {
-            /* Found exact byte match in sequence, go to next byte in memory */
-            mem_ptr++;
-
-            /* Go to next byte separator in pattern (space) */
-            while (*pat_ptr != ' ' && *pat_ptr != '\0')
-                pat_ptr++;
+            pat_pos++;
+            mask_pos++;
         } else {
             /* Byte didn't match, check pattern from the begining on the next
              * position in memory */
             start_ptr++;
-            mem_ptr = start_ptr;
-            pat_ptr = pattern;
+            mem_ptr  = start_ptr;
+            pat_pos  = 0;
+            mask_pos = 0;
         }
-
-        /* Skip trailing spaces */
-        while (*pat_ptr == ' ')
-            pat_ptr++;
     }
 
-    /* If we reached end of pattern, return the match. Otherwise, NULL */
-    return (*pat_ptr == '\0') ? start_ptr : NULL;
+    /* If we reached end of the mask (i.e. pattern), return the match.
+     * Otherwise, NULL. */
+    void* ret = (mask[mask_pos] == '\0') ? start_ptr : NULL;
+
+    free(pattern);
+    free(mask);
+
+    return ret;
 }
 
 /*----------------------------------------------------------------------------*/
