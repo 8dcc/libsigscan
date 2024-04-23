@@ -220,8 +220,8 @@ static uint8_t libsigscan_hex2byte(const char* hex) {
 static void libsigscan_ida2code(const char* ida, uint8_t** code_ptr,
                                 char** mask_ptr) {
     int arr_sz    = 100;
-    uint8_t* code = *code_ptr = malloc(arr_sz);
-    char* mask = *mask_ptr = malloc(arr_sz);
+    uint8_t* code = *code_ptr = (uint8_t*)malloc(arr_sz);
+    char* mask = *mask_ptr = (char*)malloc(arr_sz);
 
     /* Skip preceding spaces from pattern, if any */
     while (*ida == ' ')
@@ -233,8 +233,8 @@ static void libsigscan_ida2code(const char* ida, uint8_t** code_ptr,
          * used for both `code' and `mask' arrays. */
         if (i >= arr_sz) {
             arr_sz += 100;
-            code = *code_ptr = realloc(code, arr_sz);
-            mask = *mask_ptr = realloc(mask, arr_sz);
+            code = *code_ptr = (uint8_t*)realloc(code, arr_sz);
+            mask = *mask_ptr = (char*)realloc(mask, arr_sz);
         }
 
         if (*ida == '?') {
@@ -260,7 +260,7 @@ static void libsigscan_ida2code(const char* ida, uint8_t** code_ptr,
     }
 
     if (i >= arr_sz)
-        mask = *mask_ptr = realloc(mask, arr_sz + 1);
+        mask = *mask_ptr = (char*)realloc(mask, arr_sz + 1);
 
     /* Indicate the end of the pattern in the mask, since 0x00 is valid in
      * code[] */
