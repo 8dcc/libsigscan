@@ -29,7 +29,9 @@
         fputc('\n', stderr);             \
     } while (0)
 #else
-#define LIBSIGSCAN_ERR(...)
+#define LIBSIGSCAN_ERR(...) \
+    do {                    \
+    } while (0)
 #endif
 
 /*----------------------------------------------------------------------------*/
