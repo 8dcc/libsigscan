@@ -107,9 +107,7 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(const char* regex) {
 
         if (fmt_match_num < 4)
             LIBSIGSCAN_ERR("sscanf() didn't match the minimum fields (4) for "
-                           "line:\n"
-                           "%s"
-                           "\n",
+                           "line:\n%s",
                            line_buf);
 
         void* start_addr = (void*)start_num;
