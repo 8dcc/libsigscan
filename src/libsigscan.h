@@ -68,7 +68,7 @@ static bool libsigscan_regex(regex_t expr, const char* str) {
  *   0000DEADBEEF-0000ABADCAFE rwxp 000123AB 100:00 12345678   /path/module
  *
  * Each line is expected to match the following scanf() format:
- *   "%lx-%lx %s %s %s %s %s"
+ *   "%lx-%lx %s %s %s %s %200[^\n]"
  */
 static LibsigscanModuleBounds* libsigscan_get_module_bounds(const char* regex) {
     static regex_t compiled_regex;
@@ -102,8 +102,8 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(const char* regex) {
         /* Scan the current line using sscanf(). We need to change address sizes
          * depending on the arch. */
         long unsigned start_num, end_num;
-        sscanf(line_buf, "%lx-%lx %s %s %s %s %s", &start_num, &end_num, rwxp,
-               offset, dev, inode, pathname);
+        sscanf(line_buf, "%lx-%lx %s %s %s %s %200[^\n]", &start_num, &end_num,
+               rwxp, offset, dev, inode, pathname);
 
         void* start_addr = (void*)start_num;
         void* end_addr   = (void*)end_num;
