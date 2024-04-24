@@ -102,8 +102,8 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(const char* regex) {
          * depending on the arch. */
         long unsigned start_num = 0, end_num = 0, offset = 0;
         int fmt_match_num =
-          sscanf(line_buf, "%lx-%lx %4s %lx %*x:%*x %*d %s\n", &start_num,
-                 &end_num, rwxp, &offset, pathname);
+          sscanf(line_buf, "%lx-%lx %4s %lx %*x:%*x %*d %200[^\n]\n",
+                 &start_num, &end_num, rwxp, &offset, pathname);
 
         if (fmt_match_num < 4) {
             LIBSIGSCAN_ERR("sscanf() didn't match the minimum fields (4) for "
@@ -324,8 +324,11 @@ static void* sigscan_module(const char* regex, const char* ida_pattern) {
      * of all the regions whose name matches `regex'. */
     LibsigscanModuleBounds* bounds = libsigscan_get_module_bounds(regex);
 
-    if (bounds == NULL)
-        LIBSIGSCAN_ERR("Couldn't get any module bounds from /proc/self/maps");
+    if (bounds == NULL) {
+        LIBSIGSCAN_ERR("Couldn't get any module bounds matching regex \"%s\" "
+                       "in /proc/self/maps",
+                       regex);
+    }
 
     /* Iterate them, and scan each one until we find a match. */
     void* ret = NULL;
