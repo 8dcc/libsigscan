@@ -65,10 +65,11 @@ static bool libsigscan_regex(regex_t expr, const char* str) {
  * module.
  *
  * The function assumes the format of maps is always:
- *   0000DEADBEEF-0000ABADCAFE rwxp 000123AB 100:00 12345678   /path/module
+ *   0000DEADBEEF-0000ABADCAFE rwxp 000123AB 100:00 12345  /lib/my path/foo.so
  *
- * Each line is expected to match the following scanf() format:
- *   "%lx-%lx %s %s %s %s %200[^\n]"
+ * Each line is expected to match at least 4 of the 5 fields in the sscanf()
+ * format bellow. The last one (pathname) is optional and the line will be
+ * skipped if empty.
  */
 static LibsigscanModuleBounds* libsigscan_get_module_bounds(const char* regex) {
     static regex_t compiled_regex;
