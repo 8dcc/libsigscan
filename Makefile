@@ -16,5 +16,5 @@ clean:
 
 #-------------------------------------------------------------------------------
 
-$(BIN): src/main.c
-	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+$(BIN): src/main.c src/libsigscan.h
+	$(CC) $(CFLAGS) -o $@ src/main.c $(LDFLAGS)
