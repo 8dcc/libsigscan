@@ -16,8 +16,8 @@ for reading external processes by using =/proc/PID/maps=.
 It only supports linux, since it parses the =/proc/self/maps= file to get the
 start and end addresses of the loaded modules.
 
-The library asumes all signatures are in [[https://hex-rays.com/ida-pro/][IDA]] format (=DE AD ? EF=). See also the
-[[https://github.com/ajkhoury/SigMaker-x64][sigmaker]] plugin.
+The library asumes all signatures are in [[https://hex-rays.com/ida-pro/][IDA]] (=DE AD ? EF=) or [[https://x64dbg.com/][x64Dbg]]
+(=DE AD ?? EF=) format. See also the [[https://github.com/ajkhoury/SigMaker-x64][sigmaker]] plugin.
 
 For more information on signature scanning and on how this library works, check
 out my [[https://8dcc.github.io/programming/signature-scanning.html][Signature scanning in C]] blog entry.
