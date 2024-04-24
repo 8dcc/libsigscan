@@ -93,36 +93,37 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(const char* regex) {
     /* Buffers used in the loop by fgets() and sscanf() */
     static char line_buf[300];
     static char rwxp[5];
-    static char offset[17];
-    static char dev[10];
-    static char inode[10];
     static char pathname[200];
 
     while (fgets(line_buf, sizeof(line_buf), fd)) {
+        pathname[0] = '\0';
+
         /* Scan the current line using sscanf(). We need to change address sizes
          * depending on the arch. */
-        long unsigned start_num, end_num;
-        sscanf(line_buf, "%lx-%lx %s %s %s %s %200[^\n]", &start_num, &end_num,
-               rwxp, offset, dev, inode, pathname);
+        long unsigned start_num = 0, end_num = 0, offset = 0;
+        int fmt_match_num =
+          sscanf(line_buf, "%lx-%lx %4s %lx %*x:%*x %*d %s\n", &start_num,
+                 &end_num, rwxp, &offset, pathname);
+
+        if (fmt_match_num < 4)
+            LIBSIGSCAN_ERR("sscanf() didn't match the minimum fields (4) for "
+                           "line:\n"
+                           "%s"
+                           "\n",
+                           line_buf);
 
         void* start_addr = (void*)start_num;
         void* end_addr   = (void*)end_num;
 
         /* Parse "rwxp". For now we only care about read permissions. */
-        bool is_readable = rwxp[0] == 'r';
+        const bool is_readable = rwxp[0] == 'r';
 
-        bool name_matches = true;
-        if (regex == NULL) {
-            /* We don't want to filter the module name, just make sure it
-             * doesn't start with '[' and skip to the end of the line. */
-            if (pathname[0] == '[')
-                name_matches = false;
-        } else {
-            /* Compare module name against provided regex. Note that the output
-             * of maps has absolute paths. */
-            if (!libsigscan_regex(compiled_regex, pathname))
-                name_matches = false;
-        }
+        /* First, we make sure we got a name, and that it doesn't start with
+         * '\0' or '['. Then, either we don't want to filter by module name
+         * (regex is NULL) or we checked the regex and it matches. */
+        const bool name_matches =
+          fmt_match_num == 5 && pathname[0] != '\0' && pathname[0] != '[' &&
+          (regex == NULL || libsigscan_regex(compiled_regex, pathname));
 
         /* We can read it, and it's the module we are looking for. */
         if (is_readable && name_matches) {
