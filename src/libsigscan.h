@@ -105,10 +105,11 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(const char* regex) {
           sscanf(line_buf, "%lx-%lx %4s %lx %*x:%*x %*d %s\n", &start_num,
                  &end_num, rwxp, &offset, pathname);
 
-        if (fmt_match_num < 4)
+        if (fmt_match_num < 4) {
             LIBSIGSCAN_ERR("sscanf() didn't match the minimum fields (4) for "
                            "line:\n%s",
                            line_buf);
+        }
 
         void* start_addr = (void*)start_num;
         void* end_addr   = (void*)end_num;
@@ -322,6 +323,9 @@ static void* sigscan_module(const char* regex, const char* ida_pattern) {
     /* Get a linked list of ModuleBounds, containing the start and end addresses
      * of all the regions whose name matches `regex'. */
     LibsigscanModuleBounds* bounds = libsigscan_get_module_bounds(regex);
+
+    if (bounds == NULL)
+        LIBSIGSCAN_ERR("Couldn't get any module bounds from /proc/self/maps");
 
     /* Iterate them, and scan each one until we find a match. */
     void* ret = NULL;
