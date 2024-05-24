@@ -98,7 +98,7 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(int pid,
     /* Open the maps file */
     FILE* fd = fopen(maps_path, "r");
     if (!fd) {
-        LIBSIGSCAN_ERR("Couldn't open /proc/self/maps");
+        LIBSIGSCAN_ERR("Couldn't open /proc/%d/maps", pid);
         return NULL;
     }
 
