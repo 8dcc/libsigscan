@@ -74,10 +74,11 @@ static bool libsigscan_regex(regex_t expr, const char* str) {
  * module.
  *
  * The function assumes the format of maps is always:
- *   0000DEADBEEF-0000ABADCAFE rwxp 000123AB 100:00 12345678   /path/module
+ *   0000DEADBEEF-0000ABADCAFE rwxp 000123AB 100:00 12345  /lib/my path/foo.so
  *
- * Each line is expected to match the following scanf() format:
- *   "%lx-%lx %s %s %s %s %s"
+ * Each line is expected to match at least 4 of the 5 fields in the sscanf()
+ * format bellow. The last one (pathname) is optional and the line will be
+ * skipped if empty.
  */
 static LibsigscanModuleBounds* libsigscan_get_module_bounds(int pid,
                                                             const char* regex) {
@@ -109,17 +110,23 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(int pid,
     /* Buffers used in the loop by fgets() and sscanf() */
     static char line_buf[300];
     static char rwxp[5];
-    static char offset[17];
-    static char dev[10];
-    static char inode[10];
     static char pathname[200];
 
     while (fgets(line_buf, sizeof(line_buf), fd)) {
+        pathname[0] = '\0';
+
         /* Scan the current line using sscanf(). We need to change address sizes
          * depending on the arch. */
-        long unsigned start_num, end_num;
-        sscanf(line_buf, "%lx-%lx %s %s %s %s %s", &start_num, &end_num, rwxp,
-               offset, dev, inode, pathname);
+        long unsigned start_num = 0, end_num = 0, offset = 0;
+        int fmt_match_num =
+          sscanf(line_buf, "%lx-%lx %4s %lx %*x:%*x %*d %200[^\n]\n",
+                 &start_num, &end_num, rwxp, &offset, pathname);
+
+        if (fmt_match_num < 4) {
+            LIBSIGSCAN_ERR("sscanf() didn't match the minimum fields (4) for "
+                           "line:\n%s",
+                           line_buf);
+        }
 
         void* start_addr = (void*)start_num;
         void* end_addr   = (void*)end_num;
@@ -127,18 +134,12 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(int pid,
         /* Parse "rwxp". For now we only care about read permissions. */
         bool is_readable = rwxp[0] == 'r';
 
-        bool name_matches = true;
-        if (regex == NULL) {
-            /* We don't want to filter the module name, just make sure it
-             * doesn't start with '[' and skip to the end of the line. */
-            if (pathname[0] == '[')
-                name_matches = false;
-        } else {
-            /* Compare module name against provided regex. Note that the output
-             * of maps has absolute paths. */
-            if (!libsigscan_regex(compiled_regex, pathname))
-                name_matches = false;
-        }
+        /* First, we make sure we got a name, and that it doesn't start with
+         * '\0' or '['. Then, either we don't want to filter by module name
+         * (regex is NULL) or we checked the regex and it matches. */
+        const bool name_matches =
+          fmt_match_num == 5 && pathname[0] != '\0' && pathname[0] != '[' &&
+          (regex == NULL || libsigscan_regex(compiled_regex, pathname));
 
         /* We can read it, and it's the module we are looking for. */
         if (is_readable && name_matches) {
@@ -313,7 +314,8 @@ static void* libsigscan_pid_scan(int pid, uintptr_t start, uintptr_t end,
     void* mapped_start =
       mmap(NULL, region_size, PROT_READ, MAP_SHARED, fileno(fp), start);
 
-    /* FIXME: This always fails with errno: ENODEV (19) No such device */
+    /* FIXME: This always fails with errno: ENODEV (19) No such device
+     * We could use something like process_vm_readv() */
     if (mapped_start == MAP_FAILED) {
         LIBSIGSCAN_ERR("mmap() returned MAP_FAILED. Errno: %d\n", errno);
         return NULL;
@@ -415,6 +417,12 @@ static void* sigscan_pid_module(int pid, const char* regex,
     /* Get a linked list of ModuleBounds, containing the start and end addresses
      * of all the regions whose name matches `regex'. */
     LibsigscanModuleBounds* bounds = libsigscan_get_module_bounds(pid, regex);
+
+    if (bounds == NULL) {
+        LIBSIGSCAN_ERR("Couldn't get any module bounds matching regex \"%s\" "
+                       "in /proc/%d/maps",
+                       regex, pid);
+    }
 
     /* Iterate them, and scan each one until we find a match. */
     void* ret = NULL;

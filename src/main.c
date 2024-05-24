@@ -1,5 +1,7 @@
 
 #include <stdio.h>
+
+#define LIBSIGSCAN_DEBUG
 #include "libsigscan.h"
 
 /* This data would be in the application we are trying to scan. */
