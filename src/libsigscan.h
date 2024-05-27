@@ -329,6 +329,7 @@ static void* sigscan_module(const char* regex, const char* ida_pattern) {
         LIBSIGSCAN_ERR("Couldn't get any module bounds matching regex \"%s\" "
                        "in /proc/self/maps",
                        regex);
+        return NULL;
     }
 
     /* Iterate them, and scan each one until we find a match. */
