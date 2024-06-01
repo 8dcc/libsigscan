@@ -80,3 +80,30 @@ the first parameter to =sigscan_module=.
 /* Look for those bytes in all loaded modules. */
 void* match = sigscan(SIGNATURE);
 #+end_src
+
+* Troubleshooting
+
+If you are having any unexpected problems with this library (e.g. it's not able
+to find a signature that you know to be there), try defining =LIBSIGSCAN_DEBUG=
+before including the header.
+
+#+begin_src C
+#define LIBSIGSCAN_DEBUG
+#include "libsigscan.h"
+
+void* match = sigscan("DE AD BE EF ? ? CA FE");
+#+end_src
+
+That will print some useful information to =stdout=. For example:
+
+#+begin_example
+my-user-program: Searching in all modules matching regex "^.*module\.o$"...
+libsigscan: Couldn't get any module bounds matching regex "^.*module\.o$" in /proc/self/maps
+#+end_example
+
+In that example, you might want to look at the output of =cat /proc/self/maps= and
+see if, for example, the =module.o= line ends with =(deleted)=. In that case, you
+should remove the =$= from the regex.
+
+If any other unexpected errors occur, please [[https://github.com/8dcc/libsigscan/issues][report them]] with as much
+information as possible.
