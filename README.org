@@ -10,11 +10,12 @@
 * Description
 
 This library is for matching byte patterns (signatures) in the memory of a
-process. This library scans the current process, but it should be easy to modify
-for reading external processes by using =/proc/PID/maps=.
+process. By default, this library only scans the *current* process, but there is
+an [[https://github.com/8dcc/libsigscan/tree/external-scanning][=external-scanning= branch]] that is able to read external memory using
+=process_vm_readv=.
 
-It only supports linux, since it parses the =/proc/self/maps= file to get the
-start and end addresses of the loaded modules.
+It only supports linux, since it parses the =/proc/PID/maps= file to get the start
+and end addresses of the loaded modules.
 
 The library asumes all signatures are in [[https://hex-rays.com/ida-pro/][IDA]] (=DE AD ? EF=) or [[https://x64dbg.com/][x64Dbg]]
 (=DE AD ?? EF=) format. See also the [[https://github.com/ajkhoury/SigMaker-x64][sigmaker]] plugin.
@@ -63,7 +64,7 @@ void* match = sigscan_module(MODULE_REGEX, SIGNATURE);
 ** =sigscan()=
 
 This function scans the whole memory being used by the process (except the
-regions that start with =[= in =/proc/self/maps=, like heap, stack, etc.). Keep in
+regions that start with =[= in =/proc/PID/maps=, like heap, stack, etc.). Keep in
 mind that depending on the memory being used by the process, it might take a few
 seconds, so it's better to filter the module name whenever possible.
 
