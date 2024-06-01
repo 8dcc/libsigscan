@@ -9,16 +9,18 @@
 #ifndef LIBSIGSCAN_H_
 #define LIBSIGSCAN_H_ 1
 
+#define _GNU_SOURCE /* Needed for process_vm_readv() in uio.h */
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdio.h>    /* fopen(), FILE* */
-#include <string.h>   /* strstr() */
-#include <stdlib.h>   /* strtoull() */
-#include <dirent.h>   /* readdir() */
-#include <regex.h>    /* regcomp(), regexec(), etc. */
-#include <sys/mman.h> /* mmap() */
-#include <errno.h>    /* errno */
+#include <stdio.h>   /* fopen(), FILE* */
+#include <string.h>  /* strstr() */
+#include <stdlib.h>  /* strtoull() */
+#include <dirent.h>  /* readdir() */
+#include <regex.h>   /* regcomp(), regexec(), etc. */
+#include <sys/uio.h> /* process_vm_readv() */
+#include <errno.h>   /* errno */
 
 /*----------------------------------------------------------------------------*/
 /* Private macros */
@@ -195,6 +197,36 @@ static void libsigscan_free_module_bounds(LibsigscanModuleBounds* bounds) {
     }
 }
 
+static void* libsigscan_read_mem(pid_t pid, void* dst, void* src, size_t sz) {
+    if (pid == LIBSIGSCAN_PID_INVALID) {
+        LIBSIGSCAN_ERR("read_mem: Got an invalid PID");
+        return NULL;
+    }
+
+    if (pid == LIBSIGSCAN_PID_SELF) {
+        memcpy(dst, src, sz);
+        return dst;
+    }
+
+    /* The function expects an array, even though our array has one element */
+    struct iovec local[1];
+    struct iovec remote[1];
+
+    local[0].iov_base  = dst;
+    local[0].iov_len   = sz;
+    remote[0].iov_base = src;
+    remote[0].iov_len  = sz;
+
+    /* NOTE: The fact that we need to define _GNU_SOURCE is a bit hacky. We
+     * could probably use a better method for reading the process' memory. */
+    if (process_vm_readv(pid, local, 1, remote, 1, 0) == -1) {
+        LIBSIGSCAN_ERR("Error reading address %p. Errno: %d", src, errno);
+        return NULL;
+    }
+
+    return dst;
+}
+
 /* Used for getting the bytes from IDA patterns.
  * Converts: "E0" -> 224 */
 static uint8_t libsigscan_hex2byte(const char* hex) {
@@ -290,69 +322,69 @@ static void libsigscan_ida2code(const char* ida, uint8_t** code_ptr,
 static void* libsigscan_pid_scan(int pid, uintptr_t start, uintptr_t end,
                                  const char* ida) {
     if (!start || !end) {
-        LIBSIGSCAN_ERR("do_scan() got invalid start or end pointers");
+        LIBSIGSCAN_ERR("pid_scan() got invalid start or end pointers");
         return NULL;
     }
 
+    /* Convert IDA signature to Byte+Mask pattern */
     uint8_t* pattern;
     char* mask;
     libsigscan_ida2code(ida, &pattern, &mask);
 
-    static char mem_path[50] = "/proc/self/mem";
-    if (pid != LIBSIGSCAN_PID_SELF)
-        sprintf(mem_path, "/proc/%d/mem", pid);
-
-    FILE* fp = fopen(mem_path, "r");
-    if (fp == NULL) {
-        LIBSIGSCAN_ERR("Couldn't open %s", mem_path);
+    /* NOTE: For a commented version of this buffered search method, see my
+     * scratch repo:
+     *   https://github.com/8dcc/scratch/blob/main/C/misc/buffered-search.c */
+    int buf_sz   = strlen(mask);
+    uint8_t* buf = malloc(buf_sz);
+    if (libsigscan_read_mem(pid, buf, (void*)start, buf_sz) == NULL)
         return NULL;
-    }
 
-    size_t region_size = end - start;
+    uintptr_t chunk_start = start;
 
-    /* Map the first N bytes of `fp' at offset 0 to the returned pointer */
-    void* mapped_start =
-      mmap(NULL, region_size, PROT_READ, MAP_SHARED, fileno(fp), start);
+    /* The `pat_pos' variable will be used for accesing `pat' and `mask'. */
+    int pat_pos     = 0;
+    int buf_pos     = 0;
+    int match_start = 0;
 
-    /* FIXME: This always fails with errno: ENODEV (19) No such device
-     * We could use something like process_vm_readv() */
-    if (mapped_start == MAP_FAILED) {
-        LIBSIGSCAN_ERR("mmap() returned MAP_FAILED. Errno: %d\n", errno);
-        return NULL;
-    }
+    while ((chunk_start + buf_pos) < end && mask[pat_pos] != '\0') {
+        if (buf_pos >= buf_sz) {
+            if (match_start == buf_pos) {
+                chunk_start += buf_sz;
+                buf_pos = 0;
+                pat_pos = 0;
+            } else {
+                chunk_start += match_start;
+                buf_pos = pat_pos;
+            }
 
-    /* Current position in memory */
-    uint8_t* start_ptr = (uint8_t*)mapped_start;
-    uint8_t* mem_ptr   = start_ptr;
+            match_start = 0;
 
-    int pat_pos  = 0;
-    int mask_pos = 0;
+            if (chunk_start + buf_sz > end)
+                buf_sz = end - chunk_start;
 
-    /* Iterate until we reach the end of the memory or the end of the pattern */
-    while ((uintptr_t)mem_ptr < end && mask[mask_pos] != '\0') {
-        if (mask[mask_pos] == '?' || *mem_ptr == pattern[pat_pos]) {
-            /* Either there was a wildcard on the mask, or we found exact byte
-             * match with the pattern. Go to next byte in memory. */
-            mem_ptr++;
+            if (libsigscan_read_mem(pid, buf, (void*)chunk_start, buf_sz) ==
+                NULL)
+                return NULL;
+        }
+
+        if (mask[pat_pos] == '?' || buf[buf_pos] == pattern[pat_pos]) {
+            buf_pos++;
             pat_pos++;
-            mask_pos++;
         } else {
-            /* Byte didn't match, check pattern from the begining on the next
-             * position in memory */
-            start_ptr++;
-            mem_ptr  = start_ptr;
-            pat_pos  = 0;
-            mask_pos = 0;
+            match_start++;
+            buf_pos = match_start;
+            pat_pos = 0;
         }
     }
 
     /* If we reached end of the mask (i.e. pattern), return the match.
      * Otherwise, NULL. */
-    void* ret = (mask[mask_pos] == '\0') ? start_ptr : NULL;
+    void* ret =
+      (mask[pat_pos] == '\0') ? (void*)(chunk_start + match_start) : NULL;
 
-    fclose(fp);
-    free(pattern);
+    free(buf);
     free(mask);
+    free(pattern);
 
     return ret;
 }
@@ -422,13 +454,6 @@ static void* sigscan_pid_module(int pid, const char* regex,
         LIBSIGSCAN_ERR("Couldn't get any module bounds matching regex \"%s\" "
                        "in /proc/%d/maps",
                        regex, pid);
-    }
-
-    if (bounds == NULL) {
-        LIBSIGSCAN_ERR("Couldn't get any module bounds matching regex \"%s\" "
-                       "in /proc/self/maps",
-                       regex);
-        return NULL;
     }
 
     /* Iterate them, and scan each one until we find a match. */
