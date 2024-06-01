@@ -72,7 +72,7 @@ static bool libsigscan_regex(regex_t expr, const char* str) {
 }
 
 /*
- * Parse /proc/self/maps to get the start and end addresses of the specified
+ * Parse /proc/PID/maps to get the start and end addresses of the specified
  * module.
  *
  * The function assumes the format of maps is always:
@@ -409,7 +409,7 @@ int sigscan_pidof(const char* process_name) {
             continue;
 
         /* See proc_cmdline(5). You can also try:
-         *   cat /proc/self/maps | xxd   */
+         *   cat /proc/PID/cmdline | xxd   */
         sprintf(filename, "/proc/%d/cmdline", pid);
 
         FILE* fd = fopen(filename, "r");
