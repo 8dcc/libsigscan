@@ -43,6 +43,8 @@ int main(void) {
     const char* module_regex;
     void* match;
 
+    printf("Signature: \"%s\"\n", signature);
+
     /* Look for those bytes in all loaded modules. */
     match = sigscan(signature);
     printf("Searching in all modules: %p\n", match);
@@ -56,7 +58,7 @@ int main(void) {
     }
 
     /* Search only in this module. */
-    module_regex = "^.*libsigscan-test\\.out$";
+    module_regex = "^.*libsigscan-test\\.out";
     match        = sigscan_module(module_regex, signature);
     printf("Searching in all modules matching regex \"%s\": %p\n", module_regex,
            match);
@@ -82,19 +84,12 @@ int main(void) {
     }
 
     signature = "A4 A5 A6 ? ? ? AA AB";
+    printf("Signature: \"%s\"\n", signature);
 
     match = sigscan_pid(pid, signature);
     printf("Searching in all modules of PID \"%d\": %p\n", pid, match);
 
-    if (match != NULL) {
-        unsigned char* as_bytes = (unsigned char*)match;
-        printf("First %d bytes: ", 16);
-        for (size_t i = 0; i < 16; i++)
-            printf("0x%02X ", as_bytes[i]);
-        putchar('\n');
-    }
-
-    module_regex = "^.*libsigscan-test-external\\.out$";
+    module_regex = "^.*libsigscan-test-external\\.out";
     match        = sigscan_pid_module(pid, module_regex, signature);
     printf("Searching in all modules of PID \"%d\", that match regex \"%s\": "
            "%p\n",

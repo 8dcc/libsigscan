@@ -13,9 +13,9 @@ static unsigned char secret[SECRET_SZ] = { 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5,
 int main(int argc, char** argv) {
     (void)argc; /* Unused */
 
-    printf("Hello from %s, this is my data:\n", argv[0]);
+    printf("Hello from %s, this is my data at %p:\n", argv[0], secret);
 
-    for (int i = 0; i < 0xB; i++)
+    for (int i = 0; i <= 0xB; i++)
         printf("%02X ", secret[i]);
 
     printf("\n\nType anything to overwrite the data...\n");
