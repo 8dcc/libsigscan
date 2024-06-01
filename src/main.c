@@ -43,6 +43,8 @@ int main(void) {
     const char* module_regex;
     void* match;
 
+    printf("Signature: \"%s\"\n", signature);
+
     /* Look for those bytes in all loaded modules. */
     match = sigscan(signature);
     printf("Searching in all modules: %p\n", match);
