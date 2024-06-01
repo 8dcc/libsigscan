@@ -132,7 +132,7 @@ static LibsigscanModuleBounds* libsigscan_get_module_bounds(int pid,
         void* end_addr   = (void*)end_num;
 
         /* Parse "rwxp". For now we only care about read permissions. */
-        bool is_readable = rwxp[0] == 'r';
+        const bool is_readable = rwxp[0] == 'r';
 
         /* First, we make sure we got a name, and that it doesn't start with
          * '\0' or '['. Then, either we don't want to filter by module name
@@ -422,6 +422,13 @@ static void* sigscan_pid_module(int pid, const char* regex,
         LIBSIGSCAN_ERR("Couldn't get any module bounds matching regex \"%s\" "
                        "in /proc/%d/maps",
                        regex, pid);
+    }
+
+    if (bounds == NULL) {
+        LIBSIGSCAN_ERR("Couldn't get any module bounds matching regex \"%s\" "
+                       "in /proc/self/maps",
+                       regex);
+        return NULL;
     }
 
     /* Iterate them, and scan each one until we find a match. */

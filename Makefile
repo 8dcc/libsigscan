@@ -20,8 +20,8 @@ clean:
 
 #-------------------------------------------------------------------------------
 
-$(BIN1): src/main.c
-	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+$(BIN1): src/main.c src/libsigscan.h
+	$(CC) $(CFLAGS) -o $@ src/main.c $(LDFLAGS)
 
 $(BIN2): src/external-test.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
