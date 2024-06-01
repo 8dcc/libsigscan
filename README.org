@@ -53,7 +53,7 @@ mind before escaping certain characters like =+=, =?=, etc. See also [[https://w
 #+begin_src C
 #include "libsigscan.h"
 
-#define MODULE_REGEX ".+/libc.so.6"
+#define MODULE_REGEX ".+/libc\\.so\\.6"
 #define SIGNATURE    "DE AD BE EF ? ? CA FE"
 
 /* Search only in this module. */
