@@ -9,7 +9,9 @@
 #ifndef LIBSIGSCAN_H_
 #define LIBSIGSCAN_H_ 1
 
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE /* Needed for process_vm_readv() in uio.h */
+#endif
 
 #include <stddef.h>
 #include <stdint.h>
@@ -335,7 +337,7 @@ static void* libsigscan_pid_scan(int pid, uintptr_t start, uintptr_t end,
      * scratch repo:
      *   https://github.com/8dcc/scratch/blob/main/C/misc/buffered-search.c */
     int buf_sz   = strlen(mask);
-    uint8_t* buf = malloc(buf_sz);
+    uint8_t* buf = (uint8_t*)malloc(buf_sz);
     if (libsigscan_read_mem(pid, buf, (void*)start, buf_sz) == NULL)
         return NULL;
 
