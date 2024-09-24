@@ -346,9 +346,10 @@ SigscanModuleBounds* sigscan_get_module_bounds(int pid, const char* regex) {
         return NULL;
     }
 
-    /* For the first module. Start `ret' as NULL in case no module is valid. */
-    SigscanModuleBounds* ret = NULL;
-    SigscanModuleBounds* cur = ret;
+    /* Allocate dummy structure in the stack. `dummy.next' will be returned. */
+    SigscanModuleBounds dummy;
+    dummy.next               = NULL;
+    SigscanModuleBounds* cur = &dummy;
 
     /* Buffers used in the loop by fgets() and sscanf() */
     static char line_buf[300];
@@ -363,7 +364,7 @@ SigscanModuleBounds* sigscan_get_module_bounds(int pid, const char* regex) {
          * depending on the arch.
          */
         long unsigned start_num = 0, end_num = 0, offset = 0;
-        int fmt_match_num =
+        const int fmt_match_num =
           sscanf(line_buf, "%lx-%lx %4s %lx %*x:%*x %*d %200[^\n]\n",
                  &start_num, &end_num, rwxp, &offset, pathname);
 
@@ -371,7 +372,7 @@ SigscanModuleBounds* sigscan_get_module_bounds(int pid, const char* regex) {
             ERR("sscanf() didn't match the minimum fields (4) for "
                 "line:\n%s",
                 line_buf);
-            ret = NULL;
+            dummy.next = NULL;
             goto done;
         }
 
@@ -379,7 +380,7 @@ SigscanModuleBounds* sigscan_get_module_bounds(int pid, const char* regex) {
         void* end_addr   = (void*)end_num;
 
         /* Parse "rwxp". For now we only care about read permissions. */
-        const bool is_readable = rwxp[0] == 'r';
+        const bool is_readable = (rwxp[0] == 'r');
 
         /*
          * First, we make sure we got a name, and that it doesn't start with
@@ -392,37 +393,26 @@ SigscanModuleBounds* sigscan_get_module_bounds(int pid, const char* regex) {
 
         /* We can read it, and it's the module we are looking for. */
         if (is_readable && name_matches) {
-            if (cur == NULL) {
-                /* Allocate the first bounds struct
-                 * FIXME: Use dummy method. */
-                cur = (SigscanModuleBounds*)malloc(sizeof(SigscanModuleBounds));
-
-                /* This one will be returned */
-                ret = cur;
-
-                /* Save the addresses from this line of maps */
-                cur->start = start_addr;
-                cur->end   = end_addr;
-            } else if (cur->end == start_addr && cur->end < end_addr) {
-                /* If the end address of the last struct is the start of this
-                 * one, just merge them. */
+            if (cur != NULL && cur->end == start_addr && cur->end < end_addr) {
+                /*
+                 * If the end address of the last struct is the start of this
+                 * one, just merge them.
+                 */
                 cur->end = end_addr;
             } else {
-                /* There was a gap between the end of the last block and the
-                 * start of this one, allocate new struct. */
+                /*
+                 * There was a gap between the end of the last block and the
+                 * start of this one, allocate new struct.
+                 */
                 cur->next =
                   (SigscanModuleBounds*)malloc(sizeof(SigscanModuleBounds));
-
-                /* Set as current */
                 cur = cur->next;
 
-                /* Save the addresses from this line of maps */
+                /* Save the addresses from this line of the maps file. */
                 cur->start = start_addr;
                 cur->end   = end_addr;
+                cur->next  = NULL;
             }
-
-            /* Indicate the end of the linked list */
-            cur->next = NULL;
         }
     }
 
@@ -432,7 +422,7 @@ done:
         regfree(&compiled_regex);
 
     fclose(fd);
-    return ret;
+    return dummy.next;
 }
 
 void sigscan_free_module_bounds(SigscanModuleBounds* bounds) {
