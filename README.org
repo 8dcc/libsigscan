@@ -10,8 +10,9 @@
 * Description
 
 This library is for matching byte patterns (signatures) in the memory of a
-process. By default, this library only scans the *current* process, but there is
-an [[https://github.com/8dcc/libsigscan/tree/external-scanning][external-scanning branch]] that is able to read external memory using
+process.
+
+In this branch, the library is able to read *external memory* using
 =process_vm_readv=.
 
 It only supports linux, since it parses the =/proc/PID/maps= file to get the start

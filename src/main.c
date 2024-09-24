@@ -1,7 +1,6 @@
 
 #include <stdio.h>
 
-#define LIBSIGSCAN_DEBUG
 #include "libsigscan.h"
 
 /* This data would be in the application we are trying to scan. */
@@ -47,7 +46,7 @@ int main(void) {
 
     /* Look for those bytes in all loaded modules. */
     match = sigscan(signature);
-    printf("Searching in all modules: %p\n", match);
+    printf("Searched in all modules: %p\n", match);
 
     if (match != NULL) {
         unsigned char* as_bytes = (unsigned char*)match;
@@ -58,16 +57,48 @@ int main(void) {
     }
 
     /* Search only in this module. */
-    module_regex = "^.*libsigscan-test\\.out$";
+    module_regex = "^.*libsigscan-test\\.out";
     match        = sigscan_module(module_regex, signature);
-    printf("Searching in all modules matching regex \"%s\": %p\n", module_regex,
+    printf("Searched in all modules matching regex \"%s\": %p\n", module_regex,
            match);
 
     /* Invalid module, just returns NULL */
     module_regex = "^INVALID$";
     match        = sigscan_module(module_regex, signature);
-    printf("Searching in all modules matching regex \"%s\": %p\n", module_regex,
+    printf("Searched in all modules matching regex \"%s\": %p\n", module_regex,
            match);
+
+    /*------------------------------------------------------------------------*/
+    /* The following code is used for testing libsigscan on an external
+     * process. */
+
+    printf("\n\n"
+           "Testing in an external process...\n");
+
+    int pid = sigscan_pidof("libsigscan-test-external.out");
+    if (pid == SIGSCAN_PID_INVALID) {
+        printf("External process not running. Make sure you execute "
+               "libsigscan-test-external.out\n");
+        return 0;
+    }
+
+    signature = "A4 A5 A6 ? ? ? AA AB";
+    printf("Signature: \"%s\"\n", signature);
+
+    match = sigscan_pid(pid, signature);
+    printf("Searched in all modules of PID \"%d\": %p\n", pid, match);
+
+    module_regex = "^.*libsigscan-test-external\\.out";
+    match        = sigscan_pid_module(pid, module_regex, signature);
+    printf("Searched in all modules of PID \"%d\", that match regex \"%s\": "
+           "%p\n",
+           pid, module_regex, match);
+
+    module_regex = "^INVALID$";
+    match        = sigscan_pid_module(pid, module_regex, signature);
+    printf("Searched in all modules of PID \"%d\", that match regex \"%s\": "
+           "%p\n",
+           pid, module_regex, match);
 
     return 0;
 }

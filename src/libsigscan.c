@@ -17,13 +17,21 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE /* Needed for process_vm_readv() in uio.h */
+#endif
+
+#include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdio.h>  /* fopen(), FILE* */
-#include <stdlib.h> /* strtoull() */
-#include <ctype.h>  /* isspace() */
-#include <regex.h>  /* regcomp(), regexec(), etc. */
+#include <stdio.h>   /* fopen(), FILE* */
+#include <string.h>  /* strstr() */
+#include <stdlib.h>  /* strtoull() */
+#include <ctype.h>   /* isspace() */
+#include <dirent.h>  /* readdir() */
+#include <regex.h>   /* regcomp(), regexec(), etc. */
+#include <sys/uio.h> /* process_vm_readv() */
 
 /* NOTE: Remember to change the path if you move the header */
 #include "libsigscan.h"
@@ -55,11 +63,45 @@ static bool does_regex_match(regex_t expr, const char* str) {
     if (code > REG_NOMATCH) {
         char err[100];
         regerror(code, &expr, err, sizeof(err));
-        ERR("regexec() returned an error: %s\n", err);
+        ERR("regexec() returned an error: %s", err);
         return false;
     }
 
     return code == REG_NOERROR;
+}
+
+/*
+ * Read `sz' bytes from the address `src' of the process with `pid', into the
+ * buffer `dst'. Returns `dst'.
+ */
+static void* read_mem(pid_t pid, void* dst, uintptr_t src, size_t sz) {
+    if (pid == SIGSCAN_PID_INVALID) {
+        ERR("read_mem: Got an invalid PID");
+        return NULL;
+    }
+
+    if (pid == SIGSCAN_PID_SELF)
+        return memcpy(dst, (void*)src, sz);
+
+    /* The function expects an array, even though our array has one element */
+    struct iovec local[1];
+    struct iovec remote[1];
+
+    local[0].iov_base  = dst;
+    local[0].iov_len   = sz;
+    remote[0].iov_base = (void*)src;
+    remote[0].iov_len  = sz;
+
+    /*
+     * NOTE: The fact that we need to define _GNU_SOURCE is a bit hacky. We
+     * could probably use a better method for reading the process' memory.
+     */
+    if (process_vm_readv(pid, local, 1, remote, 1, 0) == -1) {
+        ERR("Error reading address %p: %s", (void*)src, strerror(errno));
+        return NULL;
+    }
+
+    return dst;
 }
 
 /*
@@ -100,8 +142,8 @@ static uint8_t hex2byte(const char* hex) {
 }
 
 /*
- * Convert `ida' signature to code + mask format. Allocate `code_ptr' and
- * `mask_ptr'.
+ * Convert `ida' signature to code + mask format. Allocated buffers `code_ptr'
+ * and `mask_ptr' should be freed by the caller.
  *
  * IDA format:  "FF ? ? 89"
  * Code format: "\xFF\x00\x00\x89"
@@ -163,43 +205,62 @@ static void ida2code(const char* ida, uint8_t** code_ptr, char** mask_ptr) {
     (*mask_ptr)[dst_i] = '\0';
 }
 
-/* Search for pattern `ida' from `start' to `end'. */
-static void* do_scan(void* start, void* end, const char* ida) {
+/* Search for pattern `ida' from `start' to `end' inside the memory of `pid' */
+static void* do_scan(int pid, uintptr_t start, uintptr_t end, const char* ida) {
     if (!start || !end) {
         ERR("do_scan() got invalid start or end pointers");
         return NULL;
     }
 
+    /* Convert IDA signature to Byte+Mask pattern */
     uint8_t* pattern;
     char* mask;
     ida2code(ida, &pattern, &mask);
 
-    /* Current position in memory */
-    uint8_t* start_ptr = (uint8_t*)start;
-    uint8_t* mem_ptr   = start_ptr;
+    /*
+     * NOTE: For a commented version of this buffered search method, see my
+     * scratch repo:
+     *   https://github.com/8dcc/scratch/blob/main/C/algorithms/buffered-search.c
+     */
+    size_t buf_sz = strlen(mask);
+    uint8_t* buf  = (uint8_t*)malloc(buf_sz);
+    if (read_mem(pid, buf, start, buf_sz) == NULL)
+        return NULL;
 
-    int pat_pos  = 0;
-    int mask_pos = 0;
+    uintptr_t chunk_start = start;
 
-    /* Iterate until we reach the end of the memory or the end of the pattern */
-    while ((void*)mem_ptr < end && mask[mask_pos] != '\0') {
-        if (mask[mask_pos] == '?' || *mem_ptr == pattern[pat_pos]) {
-            /*
-             * Either there was a wildcard on the mask, or we found exact byte
-             * match with the pattern. Go to next byte in memory.
-             */
-            mem_ptr++;
+    /* The `pat_pos' variable will be used for accesing `pat' and `mask'. */
+    size_t pat_pos     = 0;
+    size_t buf_pos     = 0;
+    size_t match_start = 0;
+
+    while ((chunk_start + buf_pos) < end && mask[pat_pos] != '\0') {
+        if (buf_pos >= buf_sz) {
+            if (match_start == buf_pos) {
+                chunk_start += buf_sz;
+                buf_pos = 0;
+                pat_pos = 0;
+            } else {
+                chunk_start += match_start;
+                buf_pos = pat_pos;
+            }
+
+            match_start = 0;
+
+            if (chunk_start + buf_sz > end)
+                buf_sz = end - chunk_start;
+
+            if (read_mem(pid, buf, chunk_start, buf_sz) == NULL)
+                return NULL;
+        }
+
+        if (mask[pat_pos] == '?' || buf[buf_pos] == pattern[pat_pos]) {
+            buf_pos++;
             pat_pos++;
-            mask_pos++;
         } else {
-            /*
-             * Byte didn't match, check pattern from the begining on the next
-             * position in memory.
-             */
-            start_ptr++;
-            mem_ptr  = start_ptr;
-            pat_pos  = 0;
-            mask_pos = 0;
+            match_start++;
+            buf_pos = match_start;
+            pat_pos = 0;
         }
     }
 
@@ -207,10 +268,12 @@ static void* do_scan(void* start, void* end, const char* ida) {
      * If we reached end of the mask (i.e. pattern), return the match.
      * Otherwise, NULL.
      */
-    void* ret = (mask[mask_pos] == '\0') ? start_ptr : NULL;
+    void* ret =
+      (mask[pat_pos] == '\0') ? (void*)(chunk_start + match_start) : NULL;
 
-    free(pattern);
+    free(buf);
     free(mask);
+    free(pattern);
 
     return ret;
 }
@@ -218,18 +281,68 @@ static void* do_scan(void* start, void* end, const char* ida) {
 /*----------------------------------------------------------------------------*/
 /* Public functions */
 
-SigscanModuleBounds* sigscan_get_module_bounds(const char* regex) {
+int sigscan_pidof(const char* process_name) {
+    static char filename[50];
+    static char cmdline[256];
+
+    DIR* dir = opendir("/proc");
+    if (dir == NULL)
+        return SIGSCAN_PID_INVALID;
+
+    struct dirent* de;
+    while ((de = readdir(dir)) != NULL) {
+        /* The name of each folder inside /proc/ is a PID */
+        const int pid = atoi(de->d_name);
+        if (pid <= 0)
+            continue;
+
+        /*
+         * See proc_cmdline(5). You can also try:
+         *   cat /proc/PID/cmdline | xxd
+         */
+        sprintf(filename, "/proc/%d/cmdline", pid);
+
+        FILE* fd = fopen(filename, "r");
+        if (fd == NULL)
+            continue;
+
+        char* fgets_ret = fgets(cmdline, sizeof(cmdline), fd);
+        fclose(fd);
+
+        if (fgets_ret == NULL)
+            continue;
+
+        /* We found the PID */
+        if (strstr(cmdline, process_name)) {
+            closedir(dir);
+            return pid;
+        }
+    }
+
+    /* We checked all /proc/.../cmdline's and we didn't find the process */
+    closedir(dir);
+    return SIGSCAN_PID_INVALID;
+}
+
+SigscanModuleBounds* sigscan_get_module_bounds(int pid, const char* regex) {
     static regex_t compiled_regex;
 
     /* Compile regex pattern once here */
     if (regex != NULL && regcomp(&compiled_regex, regex, REG_EXTENDED) != 0) {
-        ERR("regcomp() returned an error code for pattern \"%s\"\n", regex);
+        ERR("regcomp() returned an error code for pattern \"%s\"", regex);
         return NULL;
     }
 
-    FILE* fd = fopen("/proc/self/maps", "r");
+    /* Get the full path to /proc/PID/maps from the specified PID */
+    static char maps_path[50] = "/proc/self/maps";
+    if (pid != SIGSCAN_PID_SELF)
+        sprintf(maps_path, "/proc/%d/maps", pid);
+
+    /* Open the maps file */
+    FILE* fd = fopen(maps_path, "r");
     if (!fd) {
-        ERR("Couldn't open /proc/self/maps");
+        ERR("Couldn't open /proc/%d/maps", pid);
+        regfree(&compiled_regex);
         return NULL;
     }
 
@@ -258,6 +371,8 @@ SigscanModuleBounds* sigscan_get_module_bounds(const char* regex) {
             ERR("sscanf() didn't match the minimum fields (4) for "
                 "line:\n%s",
                 line_buf);
+            ret = NULL;
+            goto done;
         }
 
         void* start_addr = (void*)start_num;
@@ -311,6 +426,7 @@ SigscanModuleBounds* sigscan_get_module_bounds(const char* regex) {
         }
     }
 
+done:
     /* If we compiled a regex expression, free it before returning */
     if (regex != NULL)
         regfree(&compiled_regex);
@@ -328,24 +444,28 @@ void sigscan_free_module_bounds(SigscanModuleBounds* bounds) {
     }
 }
 
-void* sigscan_module(const char* regex, const char* ida_pattern) {
+void* sigscan_pid_module(int pid, const char* regex, const char* ida_pattern) {
+    if (pid == SIGSCAN_PID_INVALID)
+        return NULL;
+
     /*
      * Get a linked list of `SigscanModuleBounds' structures, containing the
      * start and end addresses of all the regions whose name matches `regex'.
      */
-    SigscanModuleBounds* bounds = sigscan_get_module_bounds(regex);
+    SigscanModuleBounds* bounds = sigscan_get_module_bounds(pid, regex);
 
     if (bounds == NULL) {
         ERR("Couldn't get any module bounds matching regex \"%s\" "
-            "in /proc/self/maps",
-            regex);
+            "in /proc/%d/maps",
+            regex, pid);
         return NULL;
     }
 
     /* Iterate them, and scan each one until we find a match. */
     void* ret = NULL;
     for (SigscanModuleBounds* cur = bounds; cur != NULL; cur = cur->next) {
-        void* cur_result = do_scan(cur->start, cur->end, ida_pattern);
+        void* cur_result =
+          do_scan(pid, (uintptr_t)cur->start, (uintptr_t)cur->end, ida_pattern);
 
         if (cur_result != NULL) {
             ret = cur_result;
