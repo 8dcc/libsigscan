@@ -3,11 +3,9 @@
 #+startup: showeverything
 #+author: 8dcc
 
-*Single-header C library for signature scanning on Linux.*
-
 #+TOC: headlines 2
 
-* Description
+*Simple C/C++ library for signature scanning on Linux.*
 
 This library is for matching byte patterns (signatures) in the memory of a
 process. It's able to scan the memory of the current process, or an external
