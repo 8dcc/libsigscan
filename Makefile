@@ -1,20 +1,28 @@
 
 CC=gcc
-CFLAGS=-Wall -Wextra -Wpedantic
-LDFLAGS=
+CFLAGS=-std=gnu99 -Wall -Wextra -Wpedantic
+LDLIBS=
 
 BIN=libsigscan-test.out
 
+SRCS=libsigscan.c main.c
+OBJS=$(addprefix obj/, $(addsuffix .o, $(SRCS)))
+
 #-------------------------------------------------------------------------------
 
-.PHONY: clean all
+.PHONY: all clean
 
 all: $(BIN)
 
 clean:
+	rm -f $(OBJS)
 	rm -f $(BIN)
 
 #-------------------------------------------------------------------------------
 
-$(BIN): src/main.c src/libsigscan.h
-	$(CC) $(CFLAGS) -o $@ src/main.c $(LDFLAGS)
+$(BIN): $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
+
+obj/%.c.o : src/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -o $@ -c $<
