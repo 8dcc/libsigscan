@@ -20,6 +20,8 @@
 #ifndef LIBSIGSCAN_H_
 #define LIBSIGSCAN_H_ 1
 
+#include <stddef.h> /* NULL */
+
 enum ESigscanPidType {
     SIGSCAN_PID_INVALID = -2, /* Invalid PID, should be ignored */
     SIGSCAN_PID_SELF    = -1, /* We want to search in our own modules */
