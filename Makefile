@@ -1,6 +1,6 @@
 
 CC=gcc
-CFLAGS=-std=gnu99 -Wall -Wextra -Wpedantic
+CFLAGS=-std=c99 -Wall -Wextra -Wpedantic
 LDLIBS=
 
 SRCS=libsigscan.c main.c external-test.c
