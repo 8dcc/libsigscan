@@ -10,10 +10,8 @@
 * Description
 
 This library is for matching byte patterns (signatures) in the memory of a
-process.
-
-In this branch, the library is able to read *external memory* using
-=process_vm_readv=.
+process. It's able to scan the memory of the current process, or an external
+process using the =process_vm_readv= function.
 
 It only supports linux, since it parses the =/proc/PID/maps= file to get the start
 and end addresses of the loaded modules.
@@ -37,20 +35,46 @@ $ make
 $ ./libsigscan-test.out
 #+end_src
 
+If you want to try the external example, run the following two commands in
+separate terminals after compiling.
+
+#+begin_src console
+$ ./libsigscan-test-external.out  # Simulates target process, keep it open
+$ sudo ./libsigscan-test.out      # Scans the other process, needs root
+#+end_src
+
 * Usage
 
-Since this is a simple single-header library, you just need to copy the
-=libsigscan.h= file and =#include= it on your sources.
+If you want to use this library, simply copy the detour source and headers to
+your project, =#include= the header in your source files and compile the
+=libsigscan.c= source with the rest of your code.
 
 For a full example, see [[https://github.com/8dcc/libsigscan/blob/main/src/main.c][src/main.c]].
 
-The library consists of just 2 functions: =sigscan_module()= and =sigscan()=.
+The library is pretty simple and consists of one main function for signature
+scanning, and some wrappers for it. There are also some utilities that may be
+used independently. All the functions are documented in [[file:src/libsigscan.h][the header]], but I will
+explain them here as well.
 
-** =sigscan_module()=
+** =sigscan_pidof=
 
-This function scans all the memory blocks whose name matches the =regex=
-parameter. It uses the [[https://www.gnu.org/software/sed/manual/html_node/ERE-syntax.html][Extended Regular Expression]] (ERE) syntax, so keep that in
-mind before escaping certain characters like =+=, =?=, etc. See also [[https://www.gnu.org/software/sed/manual/html_node/BRE-vs-ERE.html][BRE vs. ERE]].
+This utility function can be used to get the PID of a process by name.
+
+#+begin_src C
+#include "libsigscan.h"
+
+int pid = sigscan_pidof("my-test.out");
+#+end_src
+
+** =sigscan_pid_module=
+
+This is the main function of the library. It scans all the modules loaded by the
+process with the specified =pid=, whose name matches the specified =regex=.
+
+Some important notes:
+- It uses the [[https://www.gnu.org/software/sed/manual/html_node/ERE-syntax.html][Extended Regular Expression]] (ERE) syntax, so keep that in mind
+  before escaping certain characters like =+=, =?=, etc. See also [[https://www.gnu.org/software/sed/manual/html_node/BRE-vs-ERE.html][BRE vs. ERE]].
+- It skips modules starting with =[= in =/proc/PID/maps=, like heap, stack, etc.
 
 #+begin_src C
 #include "libsigscan.h"
@@ -58,47 +82,61 @@ mind before escaping certain characters like =+=, =?=, etc. See also [[https://w
 #define MODULE_REGEX ".+/libc\\.so\\.6"
 #define SIGNATURE    "DE AD BE EF ? ? CA FE"
 
-/* Search only in this module. */
-void* match = sigscan_module(MODULE_REGEX, SIGNATURE);
+/*
+ ,* Search for a signature in the modules loaded by "my-test.out" whose name
+ ,* matches the regex.
+ ,*/
+int pid     = sigscan_pidof("my-test.out");
+void* match = sigscan_pid_module(pid, MODULE_REGEX, SIGNATURE);
 #+end_src
 
-** =sigscan()=
+** =sigscan_pid=, =sigscan_module= and =sigscan=
 
-This function scans the whole memory being used by the process (except the
-regions that start with =[= in =/proc/PID/maps=, like heap, stack, etc.). Keep in
-mind that depending on the memory being used by the process, it might take a few
-seconds, so it's better to filter the module name whenever possible.
+These functions are just wrappers for =sigscan_pid_module=.
 
-This function is just a wrapper, and calling it is the same as passing =NULL= as
-the first parameter to =sigscan_module=.
+- The =sigscan_pid= function can be used to search for a pattern in *all modules*
+  loaded by the process with the specified PID. Same as using =NULL= as the second
+  parameter of =sigscan_pid_module=.
+- The =sigscan_module= function can be used to search for a pattern in the modules
+  loaded by *the current process*, whose name matches a regex. Same as using
+  =SIGSCAN_PID_SELF= as the first parameter of =sigscan_pid_module=.
+- The =sigscan= function can be used to search for a pattern in *all modules* loaded
+  by *the current process*. Same as using =SIGSCAN_PID_SELF= and =NULL= as the first
+  and second parameters of =sigscan_pid_module=.
 
-#+begin_src C
-#include "libsigscan.h"
+** =sigscan_get_module_bounds= and =sigscan_free_module_bounds=
 
-#define SIGNATURE "DE AD BE EF ? ? CA FE"
+These functions are used internally by the library when calling
+=sigscan_pid_module=. They are exposed, so the user can call them whenever
+necessary.
 
-/* Look for those bytes in all loaded modules. */
-void* match = sigscan(SIGNATURE);
-#+end_src
+The =sigscan_get_module_bounds= function parses the =/proc/PID/maps= file (see
+[[https://man.cx/proc(5)][proc(5)]]) to get the start and end addresses of the modules loaded by the process
+with the specified PID, whose name matches the specified regex. Similarly to
+=sigscan_pid_module=, it accepts =SIGSCAN_PID_SELF= as its first parameter, and =NULL=
+as its second parameter.
+
+It returns a linked list of =SigscanModuleBounds= structures, and each element
+contains the start and end addresses of a readable memory chunk. The caller is
+responsible for freeing this linked list by calling =sigscan_free_module_bounds=.
 
 * Troubleshooting
 
 If you are having any unexpected problems with this library (e.g. it's not able
-to find a signature that you know to be there), try defining =LIBSIGSCAN_DEBUG=
-before including the header.
+to find a signature that you know to be there), try compiling the =libsigscan.c=
+source with =LIBSIGSCAN_DEBUG= defined. You can easily do this by adding the
+following compilation option to your =CFLAGS=.
 
-#+begin_src C
-#define LIBSIGSCAN_DEBUG
-#include "libsigscan.h"
-
-void* match = sigscan("DE AD BE EF ? ? CA FE");
+#+begin_src diff
+-CFLAGS=-std=gnu99 -Wall -Wextra -Wpedantic
++CFLAGS=-std=gnu99 -Wall -Wextra -Wpedantic -DLIBSIGSCAN_DEBUG
 #+end_src
 
-That will print some useful information to =stdout=. For example:
+Now the library will print some useful information to =stderr=. For example:
 
 #+begin_example
 my-user-program: Searching in all modules matching regex "^.*module\.o$"...
-libsigscan: Couldn't get any module bounds matching regex "^.*module\.o$" in /proc/self/maps
+libsigscan: Couldn't get any module bounds matching regex "^.*module\.o$" in /proc/364195/maps
 #+end_example
 
 In that example, you might want to look at the output of =cat /proc/self/maps= and
