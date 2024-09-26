@@ -23,7 +23,7 @@ out my [[https://8dcc.github.io/programming/signature-scanning.html][Signature s
 * Building the example
 
 To try the example, simply clone the repository, compile it, and run
-=libsigscan-test.out=. Please see [[https://github.com/8dcc/libsigscan/blob/main/src/main.c][src/main.c]] and the /Usage/ section for an example
+=libsigscan-test.out=. Please see [[file:src/main.c][src/main.c]] and the /Usage/ section for an example
 on how to use it.
 
 #+begin_src console
@@ -42,19 +42,23 @@ $ sudo ./libsigscan-test.out      # Scans the other process, needs root
 #+end_src
 
 * Usage
+** Including in a project
 
 If you want to use this library, simply copy the detour source and headers to
 your project, =#include= the header in your source files and compile the
 =libsigscan.c= source with the rest of your code.
 
-For a full example, see [[https://github.com/8dcc/libsigscan/blob/main/src/main.c][src/main.c]].
+For a full example, see [[file:src/main.c][src/main.c]]. For more information on how to compile it,
+see the [[file:Makefile][Makefile]].
+
+** Public functions
 
 The library is pretty simple and consists of one main function for signature
 scanning, and some wrappers for it. There are also some utilities that may be
 used independently. All the functions are documented in [[file:src/libsigscan.h][the header]], but I will
 explain them here as well.
 
-** =sigscan_pidof=
+*** =sigscan_pidof=
 
 This utility function can be used to get the PID of a process by name.
 
@@ -64,15 +68,16 @@ This utility function can be used to get the PID of a process by name.
 int pid = sigscan_pidof("my-test.out");
 #+end_src
 
-** =sigscan_pid_module=
+*** =sigscan_pid_module=
 
 This is the main function of the library. It scans all the modules loaded by the
 process with the specified =pid=, whose name matches the specified =regex=.
 
-Some important notes:
-- It uses the [[https://www.gnu.org/software/sed/manual/html_node/ERE-syntax.html][Extended Regular Expression]] (ERE) syntax, so keep that in mind
-  before escaping certain characters like =+=, =?=, etc. See also [[https://www.gnu.org/software/sed/manual/html_node/BRE-vs-ERE.html][BRE vs. ERE]].
-- It skips modules starting with =[= in =/proc/PID/maps=, like heap, stack, etc.
+It uses POSIX [[https://www.gnu.org/software/sed/manual/html_node/ERE-syntax.html][Extended Regular Expression]] (ERE) syntax, so keep that in mind
+before escaping certain characters like =+=, =?=, etc. See also [[https://www.gnu.org/software/sed/manual/html_node/BRE-vs-ERE.html][BRE vs. ERE]].
+
+Also note that it skips modules starting with =[= in =/proc/PID/maps=, like heap,
+stack, etc.
 
 #+begin_src C
 #include "libsigscan.h"
@@ -88,21 +93,23 @@ int pid     = sigscan_pidof("my-test.out");
 void* match = sigscan_pid_module(pid, MODULE_REGEX, SIGNATURE);
 #+end_src
 
-** =sigscan_pid=, =sigscan_module= and =sigscan=
+*** =sigscan_pid=, =sigscan_module= and =sigscan=
 
 These functions are just wrappers for =sigscan_pid_module=.
 
-- The =sigscan_pid= function can be used to search for a pattern in *all modules*
-  loaded by the process with the specified PID. Same as using =NULL= as the second
-  parameter of =sigscan_pid_module=.
-- The =sigscan_module= function can be used to search for a pattern in the modules
-  loaded by *the current process*, whose name matches a regex. Same as using
-  =SIGSCAN_PID_SELF= as the first parameter of =sigscan_pid_module=.
-- The =sigscan= function can be used to search for a pattern in *all modules* loaded
-  by *the current process*. Same as using =SIGSCAN_PID_SELF= and =NULL= as the first
-  and second parameters of =sigscan_pid_module=.
+The =sigscan_pid= function can be used to search for a pattern in *all modules*
+loaded by the process with the specified PID. Same as using =NULL= as the second
+parameter of =sigscan_pid_module=.
 
-** =sigscan_get_module_bounds= and =sigscan_free_module_bounds=
+The =sigscan_module= function can be used to search for a pattern in the modules
+loaded by *the current process*, whose name matches a regex. Same as using
+=SIGSCAN_PID_SELF= as the first parameter of =sigscan_pid_module=.
+
+The =sigscan= function can be used to search for a pattern in *all modules* loaded
+by *the current process*. Same as using =SIGSCAN_PID_SELF= and =NULL= as the first and
+second parameters of =sigscan_pid_module=.
+
+*** =sigscan_get_module_bounds= and =sigscan_free_module_bounds=
 
 These functions are used internally by the library when calling
 =sigscan_pid_module=. They are exposed, so the user can call them whenever
