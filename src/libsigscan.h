@@ -58,7 +58,7 @@ int sigscan_pidof(const char* process_name);
  *   0000DEADBEEF-0000ABADCAFE rwxp 000123AB 100:00 12345  /lib/my path/foo.so
  *
  * Each line is expected to match at least 4 of the 5 fields in the `sscanf'
- * format bellow. The last one (pathname) is optional and the line will be
+ * format below. The last one (pathname) is optional and the line will be
  * skipped if empty.
  */
 SigscanModuleBounds* sigscan_get_module_bounds(int pid, const char* regex);
